@@ -1,0 +1,10 @@
+{
+  "name": "binomo-ai-signal-analyzer-root",
+  "version": "1.0.0",
+  "description": "Binomo AI Signal Analyzer",
+  "scripts": {
+    "install:all": "npm --prefix frontend install && npm --prefix backend install",
+    "build": "cd frontend && npm install && npm run build && cd ../backend && npm install && npm run build && cp -r ../frontend/dist ./public && cp -r ../frontend/dist ./dist/public",
+    "start": "cd backend && npm start"
+  }
+}

@@ -7,6 +7,7 @@ dns.setDefaultResultOrder('ipv4first');
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import express from 'express';
 import helmet from 'helmet';
 import ENV from './config/env';
@@ -21,7 +22,46 @@ import signalRoutes from './routes/signal.routes';
 import backtestRoutes from './routes/backtest.routes';
 import performanceRoutes from './routes/performance.routes';
 
+async function ensureAiEngine(): Promise<void> {
+  try {
+    const res = await fetch(`${ENV.AI_ENGINE_URL}/health`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
+    if (res && res.ok) {
+      console.log('[AI Engine] Connected at', ENV.AI_ENGINE_URL);
+      return;
+    }
+  } catch {}
+
+  const candidates = [
+    path.resolve(__dirname, '../../ai-engine/app.py'),
+    path.resolve(process.cwd(), 'ai-engine/app.py'),
+    path.resolve(process.cwd(), '../ai-engine/app.py'),
+  ];
+  const appPy = candidates.find((c) => fs.existsSync(c));
+  if (!appPy) {
+    console.warn('[AI Engine] app.py not found in candidate paths:', candidates);
+    return;
+  }
+
+  const venvPy = path.join(path.dirname(appPy), 'venv/bin/python3');
+  const pyCmd = fs.existsSync(venvPy) ? venvPy : 'python3';
+
+  console.log(`[AI Engine] Spawning: ${pyCmd} ${appPy}`);
+  try {
+    const proc = spawn(pyCmd, [appPy], {
+      stdio: 'inherit',
+      env: { ...process.env, PORT: '8000' },
+      detached: false,
+    });
+    proc.on('error', (err) => console.error('[AI Engine] Spawn failed:', err.message));
+  } catch (err) {
+    console.error('[AI Engine] Execution error:', (err as Error).message);
+  }
+}
+
 async function bootstrap(): Promise<void> {
+  // Ensure Python AI Engine is running
+  await ensureAiEngine();
+
   // ── Express app ──────────────────────────────────────────
   const app = express();
 
@@ -44,9 +84,37 @@ async function bootstrap(): Promise<void> {
   // Trust proxy (for rate limit IP detection behind load balancers)
   app.set('trust proxy', 1);
 
-  // ── Health check (no auth, no rate limit) ────────────────
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'OK', uptime: process.uptime(), env: ENV.NODE_ENV });
+  // ── Determine Frontend Distribution Directory ───────────
+  const candidatePaths = [
+    path.resolve(__dirname, '../public'),
+    path.resolve(__dirname, './public'),
+    path.resolve(__dirname, '../../frontend/dist'),
+    path.resolve(process.cwd(), 'public'),
+    path.resolve(process.cwd(), '../frontend/dist'),
+    path.resolve(process.cwd(), 'frontend/dist'),
+    path.resolve(process.cwd(), 'dist/public'),
+  ];
+  const frontendDist = candidatePaths.find((p) => fs.existsSync(path.join(p, 'index.html')));
+
+  // ── Enhanced Health check ────────────────────────────────
+  app.get('/health', async (_req, res) => {
+    let aiStatus = 'disconnected';
+    try {
+      const aiRes = await fetch(`${ENV.AI_ENGINE_URL}/health`, { signal: AbortSignal.timeout(1500) }).catch(() => null);
+      if (aiRes && aiRes.ok) aiStatus = 'connected';
+    } catch {}
+
+    res.json({
+      status: 'OK',
+      uptime: process.uptime(),
+      env: ENV.NODE_ENV,
+      services: {
+        frontend: frontendDist ? 'ready' : 'fallback',
+        ai_engine: aiStatus,
+        market_data: 'connected',
+      },
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // ── API Routes ────────────────────────────────────────────
@@ -56,14 +124,22 @@ async function bootstrap(): Promise<void> {
   app.use('/api/performance', performanceRoutes);
 
   // ── Serve Frontend Static Assets ──────────────────────────
-  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
-  if (fs.existsSync(frontendDist)) {
+  if (frontendDist) {
+    console.log('[Frontend] Serving static production files from:', frontendDist);
     app.use(express.static(frontendDist));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path.startsWith('/health')) {
         return next();
       }
       res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+  } else {
+    console.warn('[Frontend] Static frontend not found. Fallback mode enabled.');
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path.startsWith('/health')) {
+        return next();
+      }
+      res.send(`<!DOCTYPE html><html><head><title>Binomo AI Signal Analyzer</title><meta http-equiv="refresh" content="5"></head><body style="background:#0b0e14;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><h2>🚀 Binomo AI Analyzer Starting...</h2><p style="color:#94a3b8">Initializing market feed and indicators. Auto-reloading in 5s...</p></div></body></html>`);
     });
   }
 
