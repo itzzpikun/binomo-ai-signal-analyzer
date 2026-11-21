@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-gray-950 text-gray-100;
+  }
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #374151 transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #374151;
+    border-radius: 2px;
+  }
+}
+
+@keyframes pulse-glow-green {
+  0%, 100% { box-shadow: 0 0 8px 0px rgba(52, 211, 153, 0.4); }
+  50%       { box-shadow: 0 0 20px 4px rgba(52, 211, 153, 0.7); }
+}
+@keyframes pulse-glow-red {
+  0%, 100% { box-shadow: 0 0 8px 0px rgba(248, 113, 113, 0.4); }
+  50%       { box-shadow: 0 0 20px 4px rgba(248, 113, 113, 0.7); }
+}
+@keyframes pulse-glow-yellow {
+  0%, 100% { box-shadow: 0 0 8px 0px rgba(250, 204, 21, 0.4); }
+  50%       { box-shadow: 0 0 20px 4px rgba(250, 204, 21, 0.7); }
+}
+
+.glow-call  { animation: pulse-glow-green  2s ease-in-out infinite; }
+.glow-put   { animation: pulse-glow-red    2s ease-in-out infinite; }
+.glow-wait  { animation: pulse-glow-yellow 2s ease-in-out infinite; }
