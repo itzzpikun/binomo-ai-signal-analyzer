@@ -55,6 +55,18 @@ async function bootstrap(): Promise<void> {
   app.use('/api/backtest', backtestRoutes);
   app.use('/api/performance', performanceRoutes);
 
+  // ── Serve Frontend Static Assets ──────────────────────────
+  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path.startsWith('/health')) {
+        return next();
+      }
+      res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+  }
+
   // ── 404 & Error handlers ─────────────────────────────────
   app.use(notFoundHandler);
   app.use(errorHandler);
