@@ -39,7 +39,9 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-      const rawArr: any[] = Array.isArray(result) ? result : [];
+      const rawArr: any[] = Array.isArray(result)
+        ? result
+        : (Array.isArray((result as any)?.candles) ? (result as any).candles : []);
       const mapped: Candle[] = rawArr.map((c: any) => ({
         time: Math.floor(new Date(c.datetime || c.timestamp || c.time).getTime() / 1000),
         timestamp: c.datetime || c.timestamp || (c.time ? new Date(c.time * 1000).toISOString() : new Date().toISOString()),
@@ -54,9 +56,12 @@ const Dashboard: React.FC = () => {
       setCandles(mapped);
       if (mapped.length > 0) {
         setCurrentPrice(mapped[mapped.length - 1].close);
+        setDataAvailable(true);
+        setConnectionStatus('connected');
+      } else {
+        setDataAvailable(false);
+        setConnectionStatus('error');
       }
-      setDataAvailable(true);
-      setConnectionStatus('connected');
     } catch {
       setDataAvailable(false);
       setConnectionStatus('error');
@@ -65,7 +70,7 @@ const Dashboard: React.FC = () => {
 
   const analyzeSignal = useCallback(async () => {
     const currentCandles = candlesRef.current;
-    if (!dataAvailable || currentCandles.length < 50) return;
+    if (!dataAvailable || currentCandles.length < 20) return;
     setIsAnalyzing(true);
     try {
       const result = await api.analyzeSignal(selectedSymbol, selectedInterval, currentCandles);
