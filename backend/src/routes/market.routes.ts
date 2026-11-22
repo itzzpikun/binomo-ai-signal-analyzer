@@ -9,7 +9,7 @@ const router = Router();
 
 const VALID_SYMBOLS = [
   'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD',
-  'BTC/USD', 'ETH/USD', 'XAU/USD', 'US30', 'NAS100',
+  'BTC/USD', 'ETH/USD', 'XAU/USD', 'US30', 'NAS100', 'CRYPTO_IDX',
 ];
 const VALID_INTERVALS = ['1min', '5min', '15min'];
 
