@@ -59,8 +59,8 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
           <span className="text-2xl">⚡</span>
         </div>
         <div className="text-center">
-          <p className="text-gray-300 text-sm font-semibold">No Signal Generated Yet</p>
-          <p className="text-gray-500 text-xs mt-1">Select an asset and click "Generate AI Signal" to begin</p>
+          <p className="text-gray-300 text-sm font-semibold">Generating Live AI Signal...</p>
+          <p className="text-gray-500 text-xs mt-1">Live market candles & signals auto-refresh every 10 seconds</p>
         </div>
       </div>
     );

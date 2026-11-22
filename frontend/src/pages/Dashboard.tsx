@@ -1,6 +1,5 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
-import { useMarketData } from '../hooks/useMarketData';
 import { api } from '../services/api';
 import CandlestickChart from '../components/charts/CandlestickChart';
 import SignalCard from '../components/signal/SignalCard';
@@ -15,31 +14,35 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import type { Candle } from '../types';
 
 const Dashboard: React.FC = () => {
-  // Initialize market data fetching (price updates every 10 s)
-  useMarketData();
   const {
-    selectedSymbol, selectedInterval,
-    candles, currentSignal,
-    dataAvailable, isAnalyzing,
+    selectedSymbol,
+    selectedInterval,
+    candles,
+    currentSignal,
+    dataAvailable,
+    isAnalyzing,
     connectionStatus,
-    setCandles, setCurrentPrice, setDataAvailable,
-    setCurrentSignal, setIsAnalyzing, setConnectionStatus,
+    setCandles,
+    setCurrentPrice,
+    setDataAvailable,
+    setCurrentSignal,
+    setIsAnalyzing,
+    setConnectionStatus,
   } = useAppStore();
 
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [showChartOnMobile, setShowChartOnMobile] = useState(true);
 
   // Interval in seconds: 1min = 60s, 5min = 300s, 15min = 900s
-  const intervalSeconds = selectedInterval === '1min' ? 60 : selectedInterval === '15min' ? 900 : 300;
+  const intervalSeconds =
+    selectedInterval === '1min' ? 60 : selectedInterval === '15min' ? 900 : 300;
 
   const [secondsUntilNextCandle, setSecondsUntilNextCandle] = useState<number>(() => {
     const now = Math.floor(Date.now() / 1000);
     return intervalSeconds - (now % intervalSeconds);
   });
-  const [isUpdatingCandle, setIsUpdatingCandle] = useState(false);
 
-  const candlesRef = useRef(candles);
-  candlesRef.current = candles;
+  const isMountedRef = useRef(true);
+  const isAnalyzingRef = useRef(false);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -47,12 +50,47 @@ const Dashboard: React.FC = () => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const fetchCandles = useCallback(async () => {
-    try {
-      const result = await api.getCandles(selectedSymbol, selectedInterval);
+  // Analyze signal using the latest candle data
+  const analyzeSignal = useCallback(
+    async (candlesToAnalyze: Candle[]) => {
+      if (!candlesToAnalyze || candlesToAnalyze.length < 10) return;
+      if (isAnalyzingRef.current) return;
 
-      // Handle DATA_UNAVAILABLE sentinel
-      if (result && !Array.isArray(result) && (result as any).status === 'DATA_UNAVAILABLE') {
+      isAnalyzingRef.current = true;
+      setIsAnalyzing(true);
+      try {
+        const result = await api.analyzeSignal(
+          selectedSymbol,
+          selectedInterval,
+          candlesToAnalyze
+        );
+        if (result && isMountedRef.current) {
+          setCurrentSignal(result);
+        }
+      } catch (err) {
+        console.error('[Auto Signal Error]:', err);
+      } finally {
+        isAnalyzingRef.current = false;
+        if (isMountedRef.current) {
+          setIsAnalyzing(false);
+        }
+      }
+    },
+    [selectedSymbol, selectedInterval, setIsAnalyzing, setCurrentSignal]
+  );
+
+  // Fetch candles & current price, then immediately analyze signal
+  const fetchMarketDataAndAnalyze = useCallback(async () => {
+    try {
+      // 1. Fetch latest candles
+      const result = await api.getCandles(selectedSymbol, selectedInterval);
+      if (!isMountedRef.current) return;
+
+      if (
+        result &&
+        !Array.isArray(result) &&
+        (result as any).status === 'DATA_UNAVAILABLE'
+      ) {
         setDataAvailable(false);
         setConnectionStatus('error');
         return;
@@ -60,84 +98,94 @@ const Dashboard: React.FC = () => {
 
       const rawArr: any[] = Array.isArray(result)
         ? result
-        : (Array.isArray((result as any)?.candles) ? (result as any).candles : []);
-      const mapped: Candle[] = rawArr.map((c: any) => ({
-        time: Math.floor(new Date(c.datetime || c.timestamp || c.time).getTime() / 1000),
-        timestamp: c.datetime || c.timestamp || (c.time ? new Date(c.time * 1000).toISOString() : new Date().toISOString()),
-        open: parseFloat(c.open),
-        high: parseFloat(c.high),
-        low: parseFloat(c.low),
-        close: parseFloat(c.close),
-        volume: c.volume ? parseFloat(c.volume) : undefined,
-      })).filter((c: Candle) => !isNaN(c.time) && !isNaN(c.close));
+        : Array.isArray((result as any)?.candles)
+        ? (result as any).candles
+        : [];
+
+      const mapped: Candle[] = rawArr
+        .map((c: any) => ({
+          time: Math.floor(
+            new Date(
+              c.datetime || c.timestamp || (c.time ? c.time * 1000 : Date.now())
+            ).getTime() / 1000
+          ),
+          timestamp:
+            c.timestamp ||
+            c.datetime ||
+            (c.time ? new Date(c.time * 1000).toISOString() : new Date().toISOString()),
+          open: parseFloat(c.open),
+          high: parseFloat(c.high),
+          low: parseFloat(c.low),
+          close: parseFloat(c.close),
+          volume: c.volume ? parseFloat(c.volume) : undefined,
+        }))
+        .filter((c: Candle) => !isNaN(c.time) && !isNaN(c.close));
 
       mapped.sort((a, b) => a.time - b.time);
-      setCandles(mapped);
+
       if (mapped.length > 0) {
-        setCurrentPrice(mapped[mapped.length - 1].close);
+        const latestPrice = mapped[mapped.length - 1].close;
+        setCandles(mapped);
+        setCurrentPrice(latestPrice);
         setDataAvailable(true);
         setConnectionStatus('connected');
+
+        // Immediately analyze signal without any delay!
+        analyzeSignal(mapped);
       } else {
         setDataAvailable(false);
         setConnectionStatus('error');
       }
+
+      // 2. Also fetch latest tick price
+      try {
+        const priceRes = await api.getCurrentPrice(selectedSymbol);
+        if (priceRes && typeof priceRes.price === 'number' && isMountedRef.current) {
+          setCurrentPrice(priceRes.price);
+        }
+      } catch {
+        // Fallback to candle close already set
+      }
     } catch {
-      setDataAvailable(false);
-      setConnectionStatus('error');
+      if (isMountedRef.current) {
+        setDataAvailable(false);
+        setConnectionStatus('error');
+      }
     }
-  }, [selectedSymbol, selectedInterval, setCandles, setCurrentPrice, setDataAvailable, setConnectionStatus]);
+  }, [
+    selectedSymbol,
+    selectedInterval,
+    setCandles,
+    setCurrentPrice,
+    setDataAvailable,
+    setConnectionStatus,
+    analyzeSignal,
+  ]);
 
-  const analyzeSignal = useCallback(async () => {
-    const currentCandles = candlesRef.current;
-    if (!dataAvailable || currentCandles.length < 20) return;
-    setIsAnalyzing(true);
-    try {
-      const result = await api.analyzeSignal(selectedSymbol, selectedInterval, currentCandles);
-      setCurrentSignal(result);
-    } catch (err) {
-      console.error('[Analyze Signal Error]:', err);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [dataAvailable, selectedSymbol, selectedInterval, setIsAnalyzing, setCurrentSignal]);
-
-  // Initial fetch and quiet price polling every 30s (does NOT disrupt UI or re-analyze)
+  // Initial fetch on mount / symbol change + continuous 10s automatic live refresh
   useEffect(() => {
-    fetchCandles();
-    const id = setInterval(fetchCandles, 30_000);
-    return () => clearInterval(id);
-  }, [fetchCandles]);
+    isMountedRef.current = true;
+    fetchMarketDataAndAnalyze();
 
-  // Initial analysis when candles load or symbol changes
-  useEffect(() => {
-    if (candles.length >= 50 && dataAvailable) {
-      analyzeSignal();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSymbol, selectedInterval]);
+    const intervalId = setInterval(() => {
+      fetchMarketDataAndAnalyze();
+    }, 10_000);
 
-  // ⏰ Exact Candle Boundary Synchronization:
-  // Auto-refresh triggers ONLY when a new candle begins (e.g. at the 5-minute mark),
-  // exactly when CALL / PUT / WAIT signal needs to be refreshed for the fresh candle!
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(intervalId);
+    };
+  }, [fetchMarketDataAndAnalyze]);
+
+  // Candle close countdown clock (updates every 1s)
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Math.floor(Date.now() / 1000);
-      const remaining = intervalSeconds - (now % intervalSeconds);
-      setSecondsUntilNextCandle(remaining);
-
-      // Trigger automatic re-analysis precisely when the new candle opens (remaining === intervalSeconds)
-      if (remaining === intervalSeconds && autoRefresh && dataAvailable) {
-        setIsUpdatingCandle(true);
-        fetchCandles().then(() => {
-          analyzeSignal().finally(() => {
-            setIsUpdatingCandle(false);
-          });
-        });
-      }
+      setSecondsUntilNextCandle(intervalSeconds - (now % intervalSeconds));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [intervalSeconds, autoRefresh, dataAvailable, fetchCandles, analyzeSignal]);
+  }, [intervalSeconds]);
 
   const lastUpdated = candles.length
     ? new Date(candles[candles.length - 1].time * 1000).toLocaleTimeString()
@@ -151,25 +199,25 @@ const Dashboard: React.FC = () => {
           <AssetSelector />
           <TimeframeSelector />
 
-          {/* Auto-Refresh Candle Sync Button */}
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              autoRefresh
-                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
-                : 'bg-gray-800/80 border-gray-700 text-gray-400'
-            }`}
-            title="Auto-refresh AI signal only when next candle opens"
+          {/* Automatic Live 10s Sync Indicator — No manual button needed */}
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+            title="Automatic 10s Live Signal & Market Sync (No manual refresh needed)"
           >
-            <span className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-emerald-400 animate-ping' : 'bg-gray-500'}`} />
-            <span className="font-mono">
-              {isUpdatingCandle
-                ? '⚡ New Candle...'
-                : autoRefresh
-                ? `Next: ${formatTime(secondsUntilNextCandle)}`
-                : 'Auto: OFF'}
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-mono">LIVE • 10s Auto</span>
+          </div>
+
+          {/* Candle Close Countdown */}
+          <div
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border bg-gray-800/70 border-gray-700 text-gray-300"
+            title="Time remaining until the current candle closes"
+          >
+            <span className="text-gray-400">Candle:</span>
+            <span className="font-mono font-semibold text-blue-400">
+              {formatTime(secondsUntilNextCandle)}
             </span>
-          </button>
+          </div>
 
           {/* Mobile Chart Visibility Toggle */}
           <button
@@ -185,7 +233,9 @@ const Dashboard: React.FC = () => {
           <PriceTicker />
           <div className="flex items-center gap-2">
             <StatusBadge status={connectionStatus} />
-            <span className="text-gray-500 text-[11px] hidden md:inline">Synced {lastUpdated}</span>
+            <span className="text-gray-500 text-[11px] hidden md:inline">
+              Synced {lastUpdated}
+            </span>
           </div>
         </div>
       </div>
@@ -201,7 +251,7 @@ const Dashboard: React.FC = () => {
             Live market data is currently reconnecting. Signals resume once feed is active.
           </p>
           <button
-            onClick={fetchCandles}
+            onClick={fetchMarketDataAndAnalyze}
             className="mt-2 px-4 py-2 bg-yellow-900/50 border border-yellow-700 text-yellow-300 rounded-lg text-xs sm:text-sm hover:bg-yellow-800/50 transition-colors font-bold"
           >
             Retry Connection
@@ -232,32 +282,28 @@ const Dashboard: React.FC = () => {
           <div className="w-full lg:w-2/5 flex flex-col gap-2.5 sm:gap-3">
             <SignalCard signal={currentSignal} isAnalyzing={isAnalyzing} />
 
-            {currentSignal && !isAnalyzing && (
+            {/* Background auto-analyzing subtle status indicator */}
+            {isAnalyzing && currentSignal && (
+              <div className="flex items-center justify-between text-[11px] px-3 py-1.5 bg-blue-950/40 border border-blue-500/30 rounded-xl text-blue-300">
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+                  Auto-updating signal with live candles...
+                </span>
+                <span className="font-mono text-gray-400 text-[10px]">10s Live</span>
+              </div>
+            )}
+
+            {currentSignal && (
               <>
-                <button
-                  onClick={analyzeSignal}
-                  className="w-full py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 text-xs font-bold rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm"
-                >
-                  ⚡ Re-analyze Market Now
-                </button>
                 <ReasonsList reasons={currentSignal.reasons} />
                 <IndicatorPanel indicators={currentSignal.indicators} />
               </>
             )}
 
-            {!isAnalyzing && !currentSignal && candles.length >= 50 && (
-              <button
-                onClick={analyzeSignal}
-                className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-[0.98] text-sm"
-              >
-                ⚡ Generate AI Signal
-              </button>
-            )}
-
-            {!isAnalyzing && candles.length > 0 && candles.length < 50 && (
+            {!currentSignal && !isAnalyzing && candles.length > 0 && candles.length < 20 && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
                 <p className="text-gray-400 text-xs sm:text-sm">
-                  Accumulating market candles… ({candles.length}/50 loaded)
+                  Accumulating market candles… ({candles.length}/20 loaded)
                 </p>
               </div>
             )}
@@ -265,20 +311,15 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Manual refresh footer */}
+      {/* Live sync footer */}
       {dataAvailable && (
         <div className="flex items-center justify-between text-[11px] text-gray-500 px-1 pt-1">
-          <span>Signal Interval: {selectedInterval}</span>
-          <button
-            onClick={fetchCandles}
-            className="hover:text-blue-400 transition-colors flex items-center gap-1"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Reload Candles
-          </button>
+          <span className="flex items-center gap-2">
+            <span>Interval: {selectedInterval}</span>
+            <span>•</span>
+            <span className="text-emerald-500 font-medium">Auto-Refreshing (Every 10s)</span>
+          </span>
+          <span className="text-gray-500 text-[11px]">Synced: {lastUpdated}</span>
         </div>
       )}
     </div>

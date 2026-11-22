@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { getCandles, getCurrentPrice } from '../services/api';
+import type { Candle } from '../types';
 
 // Refresh interval set to 10 seconds for both price and candles
 const REFRESH_INTERVAL_MS = 10000; // 10 seconds
@@ -25,17 +26,33 @@ export const useMarketData = () => {
         setDataAvailable(false);
         setCandles([]);
       } else {
+        const mapped: Candle[] = response.candles
+          .map((c: any) => ({
+            time: Math.floor(
+              new Date(
+                c.datetime || c.timestamp || (c.time ? c.time * 1000 : Date.now())
+              ).getTime() / 1000
+            ),
+            timestamp:
+              c.timestamp ||
+              c.datetime ||
+              (c.time ? new Date(c.time * 1000).toISOString() : new Date().toISOString()),
+            open: parseFloat(c.open),
+            high: parseFloat(c.high),
+            low: parseFloat(c.low),
+            close: parseFloat(c.close),
+            volume: c.volume ? parseFloat(c.volume) : undefined,
+          }))
+          .filter((c: Candle) => !isNaN(c.time) && !isNaN(c.close));
+
+        mapped.sort((a, b) => a.time - b.time);
+
         setDataAvailable(true);
-        setCandles(response.candles);
+        setCandles(mapped);
       }
-    } catch (err: unknown) {
+    } catch {
       if (!isMountedRef.current) return;
-      const error = err as { status?: string };
-      if (error?.status === 'DATA_UNAVAILABLE') {
-        setDataAvailable(false);
-      } else {
-        setDataAvailable(false);
-      }
+      setDataAvailable(false);
       setCandles([]);
     }
   }, [selectedSymbol, selectedInterval, setCandles, setDataAvailable]);
