@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
+import { useMarketData } from '../hooks/useMarketData';
 import { api } from '../services/api';
 import CandlestickChart from '../components/charts/CandlestickChart';
 import SignalCard from '../components/signal/SignalCard';
@@ -14,6 +15,8 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import type { Candle } from '../types';
 
 const Dashboard: React.FC = () => {
+  // Initialize market data fetching (price updates every 10 s)
+  useMarketData();
   const {
     selectedSymbol, selectedInterval,
     candles, currentSignal,
