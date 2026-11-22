@@ -270,3 +270,88 @@ def calculate_volume_analysis(volumes: np.ndarray, closes: np.ndarray, period: i
         "trend": trend,
         "signal": signal,
     }
+
+
+def calculate_adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 5) -> dict:
+    """
+    Average Directional Index (ADX) with +DI and -DI.
+    Binomo Guide Strategy #2 uses period=5 for fast binary options responsiveness.
+    Returns: {adx, plus_di, minus_di}
+    """
+    highs = np.array(highs, dtype=float)
+    lows = np.array(lows, dtype=float)
+    closes = np.array(closes, dtype=float)
+
+    if len(closes) < period * 2 + 1:
+        return {"adx": float("nan"), "plus_di": float("nan"), "minus_di": float("nan")}
+
+    prev_h = highs[:-1]
+    prev_l = lows[:-1]
+    prev_c = closes[:-1]
+    curr_h = highs[1:]
+    curr_l = lows[1:]
+
+    tr = np.maximum(curr_h - curr_l, np.maximum(np.abs(curr_h - prev_c), np.abs(curr_l - prev_c)))
+    up_move = curr_h - prev_h
+    down_move = prev_l - curr_l
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+    atr_smooth = np.zeros(len(tr))
+    p_dm_smooth = np.zeros(len(tr))
+    m_dm_smooth = np.zeros(len(tr))
+
+    atr_smooth[period - 1] = np.mean(tr[:period])
+    p_dm_smooth[period - 1] = np.mean(plus_dm[:period])
+    m_dm_smooth[period - 1] = np.mean(minus_dm[:period])
+
+    for i in range(period, len(tr)):
+        atr_smooth[i] = (atr_smooth[i - 1] * (period - 1) + tr[i]) / period
+        p_dm_smooth[i] = (p_dm_smooth[i - 1] * (period - 1) + plus_dm[i]) / period
+        m_dm_smooth[i] = (m_dm_smooth[i - 1] * (period - 1) + minus_dm[i]) / period
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        p_di = np.where(atr_smooth > 0, 100.0 * (p_dm_smooth / atr_smooth), 0.0)
+        m_di = np.where(atr_smooth > 0, 100.0 * (m_dm_smooth / atr_smooth), 0.0)
+        di_sum = p_di + m_di
+        dx = np.where(di_sum > 0, 100.0 * np.abs(p_di - m_di) / di_sum, 0.0)
+
+    adx_arr = np.zeros(len(dx))
+    adx_arr[period * 2 - 1] = np.mean(dx[period - 1 : period * 2 - 1])
+    for i in range(period * 2, len(dx)):
+        adx_arr[i] = (adx_arr[i - 1] * (period - 1) + dx[i]) / period
+
+    return {
+        "adx": round(float(adx_arr[-1]), 2),
+        "plus_di": round(float(p_di[-1]), 2),
+        "minus_di": round(float(m_di[-1]), 2),
+    }
+
+
+def calculate_awesome_oscillator(highs: np.ndarray, lows: np.ndarray) -> dict:
+    """
+    Awesome Oscillator (AO: 5, 34).
+    Binomo Guide Strategy #3 (WTC).
+    Returns: {ao, prev_ao, color: 'green'|'red'}
+    """
+    highs = np.array(highs, dtype=float)
+    lows = np.array(lows, dtype=float)
+
+    if len(highs) < 35:
+        return {"ao": float("nan"), "prev_ao": float("nan"), "color": "neutral"}
+
+    median = (highs + lows) / 2.0
+    series = pd.Series(median)
+    sma5 = series.rolling(5).mean()
+    sma34 = series.rolling(34).mean()
+    ao_series = sma5 - sma34
+
+    curr_ao = float(ao_series.iloc[-1])
+    prev_ao = float(ao_series.iloc[-2]) if len(ao_series) >= 2 else curr_ao
+    color = "green" if curr_ao >= prev_ao else "red"
+
+    return {
+        "ao": round(curr_ao, 6),
+        "prev_ao": round(prev_ao, 6),
+        "color": color,
+    }
