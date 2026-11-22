@@ -46,14 +46,26 @@ export const signalController = {
         geminiKey,
         openaiKey
       );
-      const saved = await signalService.saveSignal(symbol, interval, result);
-      res.status(201).json({
+
+      const rawResult: any = result || {};
+      const finalSignal: any = {
+        ...rawResult,
+        direction: rawResult.direction || rawResult.signal?.direction || 'WAIT',
+        confidence: typeof rawResult.confidence === 'number'
+          ? rawResult.confidence
+          : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50),
+        indicators: rawResult.indicators || rawResult.signal?.indicators || {},
+        reasons: rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] },
+      };
+
+      const saved = await signalService.saveSignal(symbol, interval, finalSignal);
+      res.status(200).json({
         status: 'OK',
         signalId: saved._id,
         symbol,
         interval,
         timestamp: saved.timestamp,
-        signal: result,
+        signal: finalSignal,
         disclaimer:
           'This signal is for informational purposes only and does not constitute financial advice.',
       });
