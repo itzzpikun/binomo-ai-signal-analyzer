@@ -1,4 +1,4 @@
-# Binomo AI Signal Analyzer
+# Auto‑refresh deployed at 2026‑11‑23 01:17 UTC
 
 A professional AI-powered market analysis platform for generating CALL/PUT/WAIT signals based on multi-indicator technical analysis.
 
