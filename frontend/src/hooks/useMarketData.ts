@@ -2,7 +2,8 @@ import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { getCandles, getCurrentPrice } from '../services/api';
 
-const PRICE_POLL_INTERVAL_MS = 30000; // 30 seconds
+// Refresh interval set to 10 seconds for both price and candles
+const REFRESH_INTERVAL_MS = 10000; // 10 seconds
 
 export const useMarketData = () => {
   const selectedSymbol = useAppStore((s) => s.selectedSymbol);
@@ -12,6 +13,7 @@ export const useMarketData = () => {
   const setDataAvailable = useAppStore((s) => s.setDataAvailable);
 
   const priceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const candlesTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
 
   const fetchCandles = useCallback(async () => {
@@ -49,19 +51,21 @@ export const useMarketData = () => {
     }
   }, [selectedSymbol, setCurrentPrice]);
 
-  // Fetch candles when symbol or interval changes
+  // Initial fetch and periodic refresh for candles
   useEffect(() => {
     isMountedRef.current = true;
     fetchCandles();
+    candlesTimerRef.current = setInterval(fetchCandles, REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
+      if (candlesTimerRef.current) clearInterval(candlesTimerRef.current);
     };
   }, [fetchCandles]);
 
-  // Poll price every 30 seconds
+  // Initial fetch and periodic refresh for price
   useEffect(() => {
     fetchPrice();
-    priceTimerRef.current = setInterval(fetchPrice, PRICE_POLL_INTERVAL_MS);
+    priceTimerRef.current = setInterval(fetchPrice, REFRESH_INTERVAL_MS);
     return () => {
       if (priceTimerRef.current) clearInterval(priceTimerRef.current);
     };

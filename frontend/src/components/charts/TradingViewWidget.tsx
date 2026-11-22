@@ -66,6 +66,11 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ symbol, interval 
       hide_volume: false,
       support_host: 'https://www.tradingview.com',
     });
+    script.onerror = () => {
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '<p class="text-red-500">Failed to load TradingView chart.</p>';
+      }
+    };
 
     containerRef.current.appendChild(script);
 
