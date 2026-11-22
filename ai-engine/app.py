@@ -88,8 +88,23 @@ def analyze():
         len(cleaned["candles"]),
     )
 
+    gemini_key = (
+        request.headers.get("X-Gemini-Key")
+        or data.get("gemini_api_key")
+        or os.getenv("GEMINI_API_KEY")
+    )
+    openai_key = (
+        request.headers.get("X-OpenAI-Key")
+        or data.get("openai_api_key")
+        or os.getenv("OPENAI_API_KEY")
+    )
+
     try:
-        signal = generate_signal(cleaned["candles"])
+        signal = generate_signal(
+            cleaned["candles"],
+            gemini_api_key=gemini_key,
+            openai_api_key=openai_key,
+        )
     except Exception as exc:
         logger.exception("Signal generation failed")
         return _error(f"Analysis failed: {str(exc)}", 500)

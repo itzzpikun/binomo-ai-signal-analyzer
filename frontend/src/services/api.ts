@@ -121,11 +121,25 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     volume: Number(c.volume || 0),
   }));
 
-  const response = await apiClient.post('/api/signal/analyze', {
-    symbol: params.symbol,
-    interval: params.interval,
-    candles: formattedCandles,
-  });
+  const userGeminiKey = localStorage.getItem('user_gemini_key') || undefined;
+  const userOpenAiKey = localStorage.getItem('user_openai_key') || undefined;
+
+  const response = await apiClient.post(
+    '/api/signal/analyze',
+    {
+      symbol: params.symbol,
+      interval: params.interval,
+      candles: formattedCandles,
+      gemini_api_key: userGeminiKey,
+      openai_api_key: userOpenAiKey,
+    },
+    {
+      headers: {
+        ...(userGeminiKey ? { 'x-gemini-key': userGeminiKey } : {}),
+        ...(userOpenAiKey ? { 'x-openai-key': userOpenAiKey } : {}),
+      },
+    }
+  );
 
   const data = response.data;
   const sig = data.signal || data;
@@ -140,6 +154,10 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     confidence: typeof sig.confidence === 'number' ? sig.confidence : 0,
     indicators: sig.indicators || {},
     reasons: sig.reasons || { bullish: [], bearish: [] },
+    trade_quality: sig.trade_quality,
+    entry_timing: sig.entry_timing,
+    confluence_score: sig.confluence_score,
+    gemini_arbiter: sig.gemini_arbiter,
   };
 };
 

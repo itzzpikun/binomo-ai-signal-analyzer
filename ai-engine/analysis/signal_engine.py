@@ -27,6 +27,7 @@ from analysis.indicators import (
     calculate_awesome_oscillator,
 )
 from analysis.patterns import detect_patterns
+from analysis.gemini_arbiter import evaluate_with_gemini
 
 # ── Indicator Weights for High-Accuracy Binary Market Analysis ───────────────
 WEIGHTS = {
@@ -361,7 +362,11 @@ def _score_patterns_with_context(patterns: list, sr_pos: str, ema_sig: str) -> t
     return net, bull_reasons, bear_reasons
 
 
-def generate_signal(candles: list[dict]) -> dict:
+def generate_signal(
+    candles: list[dict],
+    gemini_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
+) -> dict:
     """
     Main signal generation function with Binomo Strategy Guide Confluence Matrix.
 
@@ -576,6 +581,59 @@ def generate_signal(candles: list[dict]) -> dict:
     else:
         confidence = round(min(max(base_confidence, 60.0), 69.0), 1)
 
+    # ── Gemini AI Arbiter Cross-Verification ──────────────────────────────────
+    indicators_snapshot = {
+        "rsi": {"value": round(rsi_val, 4) if not math.isnan(rsi_val) else None, "signal": rsi_sig},
+        "ema": {"trend": ema_sig, "ema8": ema8, "ema21": ema21, "ema50": ema50},
+        "adx": adx_dict,
+        "awesome_oscillator": ao_dict,
+        "bollinger": {"signal": bb_sig},
+        "support_resistance": {"position": sr_pos},
+    }
+
+    initial_math_signal = {
+        "direction": direction,
+        "confidence": confidence,
+        "trade_quality": trade_quality,
+        "reasons": {"bullish": all_bull_reasons[:3], "bearish": all_bear_reasons[:3]},
+    }
+
+    gemini_result = evaluate_with_gemini(
+        symbol=candles[-1].get("symbol", "EUR/USD") if candles else "EUR/USD",
+        interval="5min",
+        recent_candles=candles[-10:],
+        indicators=indicators_snapshot,
+        patterns=patterns,
+        math_signal=initial_math_signal,
+        gemini_key=gemini_api_key,
+        openai_key=openai_api_key,
+    )
+
+    if gemini_result.get("status") == "active":
+        gemini_dir = gemini_result.get("direction")
+        gemini_conf = gemini_result.get("confidence", confidence)
+        trap_risk = gemini_result.get("trap_risk", "LOW")
+        provider_name = (
+            "Gemini AI"
+            if gemini_result.get("provider") == "gemini"
+            else ("ChatGPT" if gemini_result.get("provider") == "openai" else "AI Arbiter")
+        )
+
+        if trap_risk == "HIGH" and direction != "WAIT":
+            direction = "WAIT"
+            trade_quality = f"{provider_name.upper()} TRAP VETO"
+            all_bear_reasons.append(f"🤖 {provider_name} Trap Veto: {gemini_result.get('analysis_en')}")
+        elif direction != "WAIT" and gemini_dir != "WAIT" and gemini_dir != direction:
+            direction = "WAIT"
+            trade_quality = f"{provider_name.upper()} CONFLICT VETO"
+            all_bear_reasons.append(
+                f"🤖 {provider_name} Conflict Veto: Algorithmic signal was {direction} but AI detected opposing momentum ({gemini_dir})."
+            )
+        elif direction != "WAIT" and gemini_dir == direction:
+            confidence = round((confidence * 0.5) + (gemini_conf * 0.5), 1)
+            trade_quality = f"AI CONFIRMED ({trade_quality})"
+            all_bull_reasons.append(f"🤖 {provider_name}: {gemini_result.get('analysis_en')}")
+
     # ── Exact Entry Timing & Horizon Information ──────────────────────────────
     entry_timing_info = {
         "rule_en": "Enter trade at the OPEN of the NEXT 5-minute candle within the first 10-15 seconds.",
@@ -587,6 +645,7 @@ def generate_signal(candles: list[dict]) -> dict:
         "quality_tier": trade_quality,
         "quality_label": quality_label,
         "matched_frameworks": matched_frameworks,
+        "gemini_summary": gemini_result.get("analysis_hi") if gemini_result.get("status") == "active" else None,
     }
 
     supports = sr.get("support_levels", [])
@@ -600,6 +659,7 @@ def generate_signal(candles: list[dict]) -> dict:
         "trade_quality": trade_quality,
         "entry_timing": entry_timing_info,
         "confluence_score": round((confluence_count / 10.0) * 100.0, 1),
+        "gemini_arbiter": gemini_result,
         "indicators": {
             "rsi": {
                 "value": round(rsi_val, 4) if not math.isnan(rsi_val) else None,

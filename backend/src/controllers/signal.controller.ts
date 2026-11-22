@@ -30,7 +30,22 @@ export const signalController = {
         volume: parseFloat(c.volume || '0'),
       }));
 
-      const result = await signalService.analyzeCandles(symbol, interval, sanitizedCandles);
+      const geminiKey =
+        (req.headers['x-gemini-key'] as string) ||
+        (req.body as any).gemini_api_key ||
+        process.env.GEMINI_API_KEY;
+      const openaiKey =
+        (req.headers['x-openai-key'] as string) ||
+        (req.body as any).openai_api_key ||
+        process.env.OPENAI_API_KEY;
+
+      const result = await signalService.analyzeCandles(
+        symbol,
+        interval,
+        sanitizedCandles,
+        geminiKey,
+        openaiKey
+      );
       const saved = await signalService.saveSignal(symbol, interval, result);
       res.status(201).json({
         status: 'OK',

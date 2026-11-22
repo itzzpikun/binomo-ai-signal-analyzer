@@ -49,6 +49,19 @@ export interface EntryTiming {
   quality_label?: string;
 }
 
+export interface GeminiArbiterResult {
+  status: 'active' | 'disabled' | 'fallback' | 'cached';
+  provider?: 'gemini' | 'openai' | 'fallback' | 'none';
+  model?: string;
+  approved: boolean;
+  direction: SignalDirection;
+  confidence: number;
+  trap_risk: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN';
+  analysis_en: string;
+  analysis_hi: string;
+  verdict: string;
+}
+
 export interface Signal {
   id?: string;
   symbol: string;
@@ -63,6 +76,7 @@ export interface Signal {
   trade_quality?: string;
   entry_timing?: EntryTiming;
   confluence_score?: number;
+  gemini_arbiter?: GeminiArbiterResult;
 }
 
 export interface Asset {

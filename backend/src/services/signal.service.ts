@@ -11,13 +11,28 @@ export const signalService = {
   async analyzeCandles(
     symbol: string,
     interval: string,
-    candles: OHLCCandle[]
+    candles: OHLCCandle[],
+    geminiKey?: string,
+    openaiKey?: string
   ): Promise<SignalResult> {
     try {
       const response = await axios.post(
         `${ENV.AI_ENGINE_URL}/analyze`,
-        { symbol, interval, candles },
-        { timeout: 30000, headers: { 'Content-Type': 'application/json' } }
+        {
+          symbol,
+          interval,
+          candles,
+          gemini_api_key: geminiKey,
+          openai_api_key: openaiKey,
+        },
+        {
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {}),
+            ...(openaiKey ? { 'X-OpenAI-Key': openaiKey } : {}),
+          },
+        }
       );
       return response.data as SignalResult;
     } catch (err) {

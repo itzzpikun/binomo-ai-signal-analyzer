@@ -13,6 +13,31 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
   // Candle close countdown (default 5-min candle = 300s)
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
   const [showBinomoModal, setShowBinomoModal] = useState<boolean>(false);
+  const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState<string>(() => localStorage.getItem('user_gemini_key') || '');
+  const [openAiKeyInput, setOpenAiKeyInput] = useState<string>(() => localStorage.getItem('user_openai_key') || '');
+  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+
+  const handleSaveKeys = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (geminiKeyInput.trim()) {
+      localStorage.setItem('user_gemini_key', geminiKeyInput.trim());
+    } else {
+      localStorage.removeItem('user_gemini_key');
+    }
+
+    if (openAiKeyInput.trim()) {
+      localStorage.setItem('user_openai_key', openAiKeyInput.trim());
+    } else {
+      localStorage.removeItem('user_openai_key');
+    }
+
+    setSaveSuccess(true);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setShowAiModal(false);
+    }, 1200);
+  };
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -236,6 +261,94 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         </p>
       </div>
 
+      {/* ────────────────────────────────────────────────────────── */}
+      {/* 🤖 GEMINI & CHATGPT AI ARBITER (Trap Detection & Cross-Verification) */}
+      {/* ────────────────────────────────────────────────────────── */}
+      <div className="w-full bg-gray-950/90 border border-blue-900/40 rounded-xl p-3.5 flex flex-col gap-2.5 relative overflow-hidden">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span
+                className={clsx(
+                  'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
+                  signal.gemini_arbiter?.status === 'active' ? 'bg-emerald-400' : 'bg-blue-400'
+                )}
+              />
+              <span
+                className={clsx(
+                  'relative inline-flex rounded-full h-2.5 w-2.5',
+                  signal.gemini_arbiter?.status === 'active' ? 'bg-emerald-500' : 'bg-blue-500'
+                )}
+              />
+            </span>
+            <span className="text-xs font-bold text-gray-200">
+              🤖 AI Arbiter (Gemini 1.5 / GPT-4o-mini)
+            </span>
+          </div>
+          <button
+            onClick={() => setShowAiModal(true)}
+            className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 bg-blue-950/60 hover:bg-blue-900/60 px-2 py-0.5 rounded border border-blue-800/60 transition-colors"
+          >
+            ⚙️ AI Settings
+          </button>
+        </div>
+
+        {signal.gemini_arbiter?.status === 'active' ? (
+          <div className="space-y-2 mt-0.5">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={clsx(
+                    'text-[10px] font-extrabold px-2 py-0.5 rounded-full border',
+                    signal.gemini_arbiter.trap_risk === 'LOW'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : signal.gemini_arbiter.trap_risk === 'MEDIUM'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-red-500/20 text-red-300 border-red-500/40'
+                  )}
+                >
+                  🛡️ TRAP RISK: {signal.gemini_arbiter.trap_risk}
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  via {signal.gemini_arbiter.provider === 'openai' ? 'OpenAI GPT' : 'Google Gemini'}
+                </span>
+              </div>
+              <span className="text-[11px] font-bold text-emerald-400">
+                AI Confidence: {signal.gemini_arbiter.confidence}%
+              </span>
+            </div>
+
+            {/* Hindi Reason */}
+            {signal.gemini_arbiter.analysis_hi && (
+              <p className="text-xs text-gray-300 bg-gray-900/80 p-2.5 rounded-lg border border-gray-800">
+                💬 <b>AI Analysis:</b> {signal.gemini_arbiter.analysis_hi}
+              </p>
+            )}
+            {/* English Reason */}
+            {signal.gemini_arbiter.analysis_en && (
+              <p className="text-[11px] text-gray-400 italic">
+                {signal.gemini_arbiter.analysis_en}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800 text-xs">
+            <div className="text-gray-400">
+              <span className="text-yellow-400 font-semibold">⚡ Mathematical Confluence Active.</span>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Connect free Google Gemini AI to enable false-breakout & trap filtering.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAiModal(true)}
+              className="text-[11px] whitespace-nowrap bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-3 py-1.5 rounded-lg shadow transition-all"
+            >
+              + Add Free AI Key
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Model Confidence Meter */}
       <div className="w-full">
         <ConfidenceBar confidence={signal.confidence} direction={signal.direction} />
@@ -298,6 +411,95 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🤖 AI Arbiter (Gemini & ChatGPT) Settings Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-blue-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowAiModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-lg font-bold"
+            >
+              ✕
+            </button>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-xl">
+                🤖
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-100">AI Senior Arbiter Setup</h3>
+                <p className="text-xs text-gray-400">Google Gemini & ChatGPT False-Breakout Defense</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveKeys} className="space-y-4 text-xs text-gray-300">
+              <div className="bg-blue-950/40 border border-blue-800/60 rounded-xl p-3">
+                <p className="font-semibold text-blue-300 mb-1">💡 100% Free AI Key from Google</p>
+                <p className="text-gray-300 leading-relaxed text-[11px]">
+                  Google provides free Gemini 1.5/2.0 Flash API access with high rate limits without requiring a credit card.
+                  Get your free key here:
+                </p>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-2 font-mono text-yellow-400 hover:text-yellow-300 underline font-semibold"
+                >
+                  👉 Get Free Gemini API Key (aistudio.google.com) ↗
+                </a>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">
+                  Google Gemini API Key:
+                </label>
+                <input
+                  type="password"
+                  value={geminiKeyInput}
+                  onChange={(e) => setGeminiKeyInput(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full px-3 py-2 rounded-lg bg-gray-950 border border-gray-700 text-gray-200 font-mono text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">
+                  OpenAI API Key (Optional / Alternative):
+                </label>
+                <input
+                  type="password"
+                  value={openAiKeyInput}
+                  onChange={(e) => setOpenAiKeyInput(e.target.value)}
+                  placeholder="sk-proj-..."
+                  className="w-full px-3 py-2 rounded-lg bg-gray-950 border border-gray-700 text-gray-200 font-mono text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {saveSuccess && (
+                <div className="bg-emerald-950/80 border border-emerald-500/80 text-emerald-300 p-2.5 rounded-lg text-center font-bold">
+                  ✓ AI Keys Saved! Market analysis will now be cross-verified by AI.
+                </div>
+              )}
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-center text-xs transition-colors shadow-lg shadow-blue-600/30"
+                >
+                  Save & Activate AI
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAiModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
