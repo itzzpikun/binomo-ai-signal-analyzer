@@ -13,31 +13,6 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
   // Candle close countdown (default 5-min candle = 300s)
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
   const [showBinomoModal, setShowBinomoModal] = useState<boolean>(false);
-  const [showAiModal, setShowAiModal] = useState<boolean>(false);
-  const [geminiKeyInput, setGeminiKeyInput] = useState<string>(() => localStorage.getItem('user_gemini_key') || '');
-  const [openAiKeyInput, setOpenAiKeyInput] = useState<string>(() => localStorage.getItem('user_openai_key') || '');
-  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
-
-  const handleSaveKeys = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (geminiKeyInput.trim()) {
-      localStorage.setItem('user_gemini_key', geminiKeyInput.trim());
-    } else {
-      localStorage.removeItem('user_gemini_key');
-    }
-
-    if (openAiKeyInput.trim()) {
-      localStorage.setItem('user_openai_key', openAiKeyInput.trim());
-    } else {
-      localStorage.removeItem('user_openai_key');
-    }
-
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-      setShowAiModal(false);
-    }, 1200);
-  };
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -291,12 +266,9 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
               🤖 AI Arbiter (Gemini 1.5 / GPT-4o-mini)
             </span>
           </div>
-          <button
-            onClick={() => setShowAiModal(true)}
-            className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 bg-blue-950/60 hover:bg-blue-900/60 px-2 py-0.5 rounded border border-blue-800/60 transition-colors"
-          >
-            ⚙️ AI Settings
-          </button>
+          <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60">
+            Backend Integrated
+          </span>
         </div>
 
         {signal.gemini_arbiter?.status === 'active' ? (
@@ -338,19 +310,14 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
             )}
           </div>
         ) : (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800 text-xs">
-            <div className="text-gray-400">
-              <span className="text-yellow-400 font-semibold">⚡ Mathematical Confluence Active.</span>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                Connect free Google Gemini AI to enable false-breakout & trap filtering.
-              </p>
+          <div className="flex items-center justify-between gap-2 bg-gray-900/60 p-2 rounded-lg border border-gray-800 text-xs">
+            <div className="text-gray-300 flex items-center gap-2">
+              <span className="text-emerald-400 font-semibold">⚡ Permanent Backend AI Active:</span>
+              <span className="text-gray-400 text-[11px]">Real-time confluence & trap detection verified</span>
             </div>
-            <button
-              onClick={() => setShowAiModal(true)}
-              className="text-[11px] whitespace-nowrap bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-3 py-1.5 rounded-lg shadow transition-all"
-            >
-              + Add Free AI Key
-            </button>
+            <span className="text-[10px] text-gray-400 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
+              Ready
+            </span>
           </div>
         )}
       </div>
@@ -421,94 +388,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         </div>
       )}
 
-      {/* 🤖 AI Arbiter (Gemini & ChatGPT) Settings Modal */}
-      {showAiModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-gray-900 border border-blue-500/40 rounded-2xl max-w-lg w-full max-h-[88vh] overflow-y-auto p-4 sm:p-6 shadow-2xl relative">
-            <button
-              onClick={() => setShowAiModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white text-lg font-bold"
-            >
-              ✕
-            </button>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-xl">
-                🤖
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-100">AI Senior Arbiter Setup</h3>
-                <p className="text-xs text-gray-400">Google Gemini & ChatGPT False-Breakout Defense</p>
-              </div>
-            </div>
 
-            <form onSubmit={handleSaveKeys} className="space-y-4 text-xs text-gray-300">
-              <div className="bg-blue-950/40 border border-blue-800/60 rounded-xl p-3">
-                <p className="font-semibold text-blue-300 mb-1">💡 100% Free AI Key from Google</p>
-                <p className="text-gray-300 leading-relaxed text-[11px]">
-                  Google provides free Gemini 1.5/2.0 Flash API access with high rate limits without requiring a credit card.
-                  Get your free key here:
-                </p>
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block mt-2 font-mono text-yellow-400 hover:text-yellow-300 underline font-semibold"
-                >
-                  👉 Get Free Gemini API Key (aistudio.google.com) ↗
-                </a>
-              </div>
-
-              <div>
-                <label className="block text-gray-300 font-semibold mb-1">
-                  Google Gemini API Key:
-                </label>
-                <input
-                  type="password"
-                  value={geminiKeyInput}
-                  onChange={(e) => setGeminiKeyInput(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full px-3 py-2 rounded-lg bg-gray-950 border border-gray-700 text-gray-200 font-mono text-xs focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-gray-300 font-semibold mb-1">
-                  OpenAI API Key (Optional / Alternative):
-                </label>
-                <input
-                  type="password"
-                  value={openAiKeyInput}
-                  onChange={(e) => setOpenAiKeyInput(e.target.value)}
-                  placeholder="sk-proj-..."
-                  className="w-full px-3 py-2 rounded-lg bg-gray-950 border border-gray-700 text-gray-200 font-mono text-xs focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              {saveSuccess && (
-                <div className="bg-emerald-950/80 border border-emerald-500/80 text-emerald-300 p-2.5 rounded-lg text-center font-bold">
-                  ✓ AI Keys Saved! Market analysis will now be cross-verified by AI.
-                </div>
-              )}
-
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-center text-xs transition-colors shadow-lg shadow-blue-600/30"
-                >
-                  Save & Activate AI
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAiModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

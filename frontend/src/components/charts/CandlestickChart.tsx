@@ -3,6 +3,7 @@ import { createChart, ColorType, CrosshairMode } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, CandlestickData, Time, LineData } from 'lightweight-charts';
 import { useAppStore } from '../../store/appStore';
 import type { Candle } from '../../types';
+import TradingViewWidget from './TradingViewWidget';
 
 const CHART_COLORS = {
   background: '#0a0f1d',
@@ -44,6 +45,9 @@ const CandlestickChart: React.FC = () => {
   const candles = useAppStore((s) => s.candles);
   const selectedSymbol = useAppStore((s) => s.selectedSymbol);
   const selectedInterval = useAppStore((s) => s.selectedInterval);
+
+  // Active chart engine: TradingView Live View vs AI Pro Chart
+  const [chartMode, setChartMode] = useState<'tradingview' | 'ai'>('tradingview');
 
   // Live hover candle details
   const [hoverData, setHoverData] = useState<{
@@ -128,8 +132,8 @@ const CandlestickChart: React.FC = () => {
         timeVisible: true,
         secondsVisible: false,
       },
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
+      width: containerRef.current.clientWidth || 600,
+      height: Math.max(containerRef.current.clientHeight || 0, 380),
     });
 
     chartRef.current = chart;
@@ -192,7 +196,19 @@ const CandlestickChart: React.FC = () => {
 
     const sorted = [...data].sort((a, b) => a.time - b.time);
 
-    const candleData: CandlestickData<Time>[] = sorted.map((c) => ({
+    // Strictly increasing deduplication required by lightweight-charts
+    const uniqueSorted: Candle[] = [];
+    let lastTime = -1;
+    for (const c of sorted) {
+      if (c.time > lastTime && !isNaN(c.open) && !isNaN(c.close)) {
+        uniqueSorted.push(c);
+        lastTime = c.time;
+      }
+    }
+
+    if (!uniqueSorted.length) return;
+
+    const candleData: CandlestickData<Time>[] = uniqueSorted.map((c) => ({
       time: c.time as Time,
       open: c.open,
       high: c.high,
@@ -203,15 +219,15 @@ const CandlestickChart: React.FC = () => {
     candleSeriesRef.current.setData(candleData);
 
     // Calculate EMAs
-    const closes = sorted.map((c) => c.close);
+    const closes = uniqueSorted.map((c) => c.close);
     const ema9Values = calculateEMA(closes, 9);
     const ema21Values = calculateEMA(closes, 21);
 
-    const ema9Data: LineData<Time>[] = sorted
+    const ema9Data: LineData<Time>[] = uniqueSorted
       .map((c, i) => ({ time: c.time as Time, value: ema9Values[i] }))
       .filter((d) => d.value !== null) as LineData<Time>[];
 
-    const ema21Data: LineData<Time>[] = sorted
+    const ema21Data: LineData<Time>[] = uniqueSorted
       .map((c, i) => ({ time: c.time as Time, value: ema21Values[i] }))
       .filter((d) => d.value !== null) as LineData<Time>[];
 
@@ -264,13 +280,37 @@ const CandlestickChart: React.FC = () => {
     <div className="bg-gray-900/90 border border-gray-800 rounded-xl overflow-hidden flex flex-col h-full shadow-2xl backdrop-blur-sm">
       {/* Chart Top Header & Live Activity Bar */}
       <div className="px-2.5 sm:px-4 py-2 sm:py-2.5 border-b border-gray-800/80 bg-gray-950/60 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-        {/* Symbol & Live Status */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        {/* Symbol, View Switcher & Live Status */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 sm:gap-2">
             <span className="text-gray-100 font-bold tracking-wide text-sm sm:text-base">{selectedSymbol}</span>
             <span className="px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
               {selectedInterval}
             </span>
+          </div>
+
+          {/* Chart View Mode Switcher */}
+          <div className="flex items-center gap-1 bg-gray-950 border border-gray-800 p-0.5 rounded-lg">
+            <button
+              onClick={() => setChartMode('tradingview')}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                chartMode === 'tradingview'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              📈 TradingView Live
+            </button>
+            <button
+              onClick={() => setChartMode('ai')}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                chartMode === 'ai'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              📊 AI Pro Chart
+            </button>
           </div>
 
           {/* Live Pulsing Dot */}
@@ -308,50 +348,60 @@ const CandlestickChart: React.FC = () => {
           </div>
 
           {/* EMA Indicators Legend */}
-          <div className="flex items-center gap-2 sm:gap-3 text-xs hidden sm:flex">
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-0.5 bg-sky-400 inline-block rounded-full"></span>
-              <span className="text-gray-400 text-[11px]">EMA 9</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-0.5 bg-amber-400 inline-block rounded-full"></span>
-              <span className="text-gray-400 text-[11px]">EMA 21</span>
-            </span>
-          </div>
+          {chartMode === 'ai' && (
+            <div className="flex items-center gap-2 sm:gap-3 text-xs hidden sm:flex">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0.5 bg-sky-400 inline-block rounded-full"></span>
+                <span className="text-gray-400 text-[11px]">EMA 9</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0.5 bg-amber-400 inline-block rounded-full"></span>
+                <span className="text-gray-400 text-[11px]">EMA 21</span>
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* OHLC Interactive Status Bar */}
-      <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400">
-        {hoverData ? (
-          <>
-            <span className="text-gray-500">{hoverData.time}</span>
-            <span>O: <span className="text-gray-200">{hoverData.open?.toFixed(5)}</span></span>
-            <span>H: <span className="text-gray-200">{hoverData.high?.toFixed(5)}</span></span>
-            <span>L: <span className="text-gray-200">{hoverData.low?.toFixed(5)}</span></span>
-            <span>C: <span className="text-gray-200">{hoverData.close?.toFixed(5)}</span></span>
-            <span className={hoverData.change && hoverData.change >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
-              {hoverData.change && hoverData.change >= 0 ? '+' : ''}{hoverData.change?.toFixed(3)}%
-            </span>
-          </>
-        ) : latestCandle ? (
-          <>
-            <span className="text-gray-500 hidden sm:inline">Latest:</span>
-            <span>O: <span className="text-gray-300">{latestCandle.open.toFixed(5)}</span></span>
-            <span>H: <span className="text-gray-300">{latestCandle.high.toFixed(5)}</span></span>
-            <span>L: <span className="text-gray-300">{latestCandle.low.toFixed(5)}</span></span>
-            <span>C: <span className="text-gray-300">{latestCandle.close.toFixed(5)}</span></span>
-            <span className={isUp ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
-              {isUp ? '+' : ''}{candleChange.toFixed(3)}%
-            </span>
-          </>
-        ) : (
-          <span className="text-gray-600">Tap or hover candles to inspect details</span>
-        )}
-      </div>
+      {chartMode === 'tradingview' ? (
+        <div className="flex-1 w-full min-h-[380px] sm:min-h-[440px] p-1">
+          <TradingViewWidget symbol={selectedSymbol} interval={selectedInterval} />
+        </div>
+      ) : (
+        <>
+          {/* OHLC Interactive Status Bar */}
+          <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400">
+            {hoverData ? (
+              <>
+                <span className="text-gray-500">{hoverData.time}</span>
+                <span>O: <span className="text-gray-200">{hoverData.open?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span>H: <span className="text-gray-200">{hoverData.high?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span>L: <span className="text-gray-200">{hoverData.low?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span>C: <span className="text-gray-200">{hoverData.close?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span className={hoverData.change && hoverData.change >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
+                  {hoverData.change && hoverData.change >= 0 ? '+' : ''}{hoverData.change?.toFixed(3)}%
+                </span>
+              </>
+            ) : latestCandle ? (
+              <>
+                <span className="text-gray-500 hidden sm:inline">Latest:</span>
+                <span>O: <span className="text-gray-300">{latestCandle.open.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span>H: <span className="text-gray-300">{latestCandle.high.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span>L: <span className="text-gray-300">{latestCandle.low.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span>C: <span className="text-gray-300">{latestCandle.close.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+                <span className={isUp ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
+                  {isUp ? '+' : ''}{candleChange.toFixed(3)}%
+                </span>
+              </>
+            ) : (
+              <span className="text-gray-600">Tap or hover candles to inspect details</span>
+            )}
+          </div>
 
-      {/* Lightweight Charts Canvas */}
-      <div ref={containerRef} className="flex-1 w-full min-h-[200px] sm:min-h-[380px]" />
+          {/* Lightweight Charts Canvas */}
+          <div ref={containerRef} className="flex-1 w-full min-h-[380px] sm:min-h-[440px]" />
+        </>
+      )}
     </div>
   );
 };

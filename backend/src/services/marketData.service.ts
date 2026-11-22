@@ -51,6 +51,16 @@ function hasApiKey(customKey?: string): boolean {
   return Boolean(key && key !== 'your_key_here');
 }
 
+function formatPriceValue(val: number, isCryptoIdx = false): number {
+  if (isCryptoIdx) {
+    return parseFloat(val.toFixed(2));
+  }
+  if (val >= 50) {
+    return parseFloat(val.toFixed(2));
+  }
+  return parseFloat(val.toFixed(5));
+}
+
 async function fetchCryptoCandles(symbol: string, interval: string, outputsize: number): Promise<OHLCCandle[] | null> {
   const isCryptoIdx = symbol.toUpperCase() === 'CRYPTO_IDX';
   const coinbaseMap: Record<string, string> = {
@@ -81,10 +91,10 @@ async function fetchCryptoCandles(symbol: string, interval: string, outputsize: 
         // Coinbase returns [time, low, high, open, close, volume], sorted newest first
         const candles: OHLCCandle[] = res.data.slice(0, outputsize).map((k: any) => ({
           timestamp: new Date(k[0] * 1000).toISOString(),
-          open: parseFloat((k[3] * scale).toFixed(2)),
-          high: parseFloat((k[2] * scale).toFixed(2)),
-          low: parseFloat((k[1] * scale).toFixed(2)),
-          close: parseFloat((k[4] * scale).toFixed(2)),
+          open: formatPriceValue(k[3] * scale, isCryptoIdx),
+          high: formatPriceValue(k[2] * scale, isCryptoIdx),
+          low: formatPriceValue(k[1] * scale, isCryptoIdx),
+          close: formatPriceValue(k[4] * scale, isCryptoIdx),
           volume: parseFloat(k[5] || '0'),
         }));
         return candles;
@@ -108,10 +118,10 @@ async function fetchCryptoCandles(symbol: string, interval: string, outputsize: 
         if (Array.isArray(res.data) && res.data.length > 0) {
           return res.data.map((k: any) => ({
             timestamp: new Date(k[0]).toISOString(),
-            open: parseFloat((parseFloat(k[1]) * scale).toFixed(2)),
-            high: parseFloat((parseFloat(k[2]) * scale).toFixed(2)),
-            low: parseFloat((parseFloat(k[3]) * scale).toFixed(2)),
-            close: parseFloat((parseFloat(k[4]) * scale).toFixed(2)),
+            open: formatPriceValue(parseFloat(k[1]) * scale, isCryptoIdx),
+            high: formatPriceValue(parseFloat(k[2]) * scale, isCryptoIdx),
+            low: formatPriceValue(parseFloat(k[3]) * scale, isCryptoIdx),
+            close: formatPriceValue(parseFloat(k[4]) * scale, isCryptoIdx),
             volume: parseFloat(k[5] || '0'),
           }));
         }
@@ -148,7 +158,7 @@ async function fetchCryptoPrice(symbol: string): Promise<number | null> {
         timeout: 6000,
       });
       if (res.data?.price) {
-        return parseFloat((parseFloat(res.data.price) * scale).toFixed(2));
+        return formatPriceValue(parseFloat(res.data.price) * scale, isCryptoIdx);
       }
     } catch {
       // Fallback
@@ -165,7 +175,7 @@ async function fetchCryptoPrice(symbol: string): Promise<number | null> {
           timeout: 5000,
         });
         if (res.data?.price) {
-          return parseFloat((parseFloat(res.data.price) * scale).toFixed(2));
+          return formatPriceValue(parseFloat(res.data.price) * scale, isCryptoIdx);
         }
       } catch {
         continue;
@@ -287,10 +297,10 @@ export const marketDataService = {
 
       const candles: OHLCCandle[] = body.values.map((v) => ({
         timestamp: v.datetime,
-        open: parseFloat((parseFloat(v.open) * scale).toFixed(2)),
-        high: parseFloat((parseFloat(v.high) * scale).toFixed(2)),
-        low: parseFloat((parseFloat(v.low) * scale).toFixed(2)),
-        close: parseFloat((parseFloat(v.close) * scale).toFixed(2)),
+        open: formatPriceValue(parseFloat(v.open) * scale, sym === 'CRYPTO_IDX'),
+        high: formatPriceValue(parseFloat(v.high) * scale, sym === 'CRYPTO_IDX'),
+        low: formatPriceValue(parseFloat(v.low) * scale, sym === 'CRYPTO_IDX'),
+        close: formatPriceValue(parseFloat(v.close) * scale, sym === 'CRYPTO_IDX'),
         volume: parseFloat(v.volume ?? '0'),
       }));
 
@@ -367,7 +377,7 @@ export const marketDataService = {
         dataUnavailable(body.message ?? 'Could not retrieve current price');
       }
 
-      const price = parseFloat((parseFloat(body.price!) * scale).toFixed(2));
+      const price = formatPriceValue(parseFloat(body.price!) * scale, sym === 'CRYPTO_IDX');
       cacheService.set(cacheKey, price, 30); // 30s cache for price
       return price;
     } catch (err) {

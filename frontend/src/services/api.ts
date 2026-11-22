@@ -69,27 +69,21 @@ export const getCandles = async (
   interval: TimeInterval,
   outputsize = 100
 ): Promise<CandlesResponse> => {
-  const userMarketKey = localStorage.getItem('user_market_key') || undefined;
   const response = await apiClient.get('/api/market/candles', {
     params: {
       symbol,
       interval,
       outputsize,
-      ...(userMarketKey ? { apikey: userMarketKey } : {}),
     },
-    headers: userMarketKey ? { 'x-market-key': userMarketKey } : {},
   });
   return response.data;
 };
 
 export const getCurrentPrice = async (symbol: string): Promise<PriceResponse> => {
-  const userMarketKey = localStorage.getItem('user_market_key') || undefined;
   const response = await apiClient.get('/api/market/price', {
     params: {
       symbol,
-      ...(userMarketKey ? { apikey: userMarketKey } : {}),
     },
-    headers: userMarketKey ? { 'x-market-key': userMarketKey } : {},
   });
   return response.data;
 };
@@ -133,23 +127,12 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     volume: Number(c.volume || 0),
   }));
 
-  const userGeminiKey = localStorage.getItem('user_gemini_key') || undefined;
-  const userOpenAiKey = localStorage.getItem('user_openai_key') || undefined;
-
   const response = await apiClient.post(
     '/api/signal/analyze',
     {
       symbol: params.symbol,
       interval: params.interval,
       candles: formattedCandles,
-      gemini_api_key: userGeminiKey,
-      openai_api_key: userOpenAiKey,
-    },
-    {
-      headers: {
-        ...(userGeminiKey ? { 'x-gemini-key': userGeminiKey } : {}),
-        ...(userOpenAiKey ? { 'x-openai-key': userOpenAiKey } : {}),
-      },
     }
   );
 
