@@ -263,35 +263,35 @@ const CandlestickChart: React.FC = () => {
   return (
     <div className="bg-gray-900/90 border border-gray-800 rounded-xl overflow-hidden flex flex-col h-full shadow-2xl backdrop-blur-sm">
       {/* Chart Top Header & Live Activity Bar */}
-      <div className="px-4 py-2.5 border-b border-gray-800/80 bg-gray-950/60 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-2.5 sm:px-4 py-2 sm:py-2.5 border-b border-gray-800/80 bg-gray-950/60 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         {/* Symbol & Live Status */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-gray-100 font-bold tracking-wide text-base">{selectedSymbol}</span>
-            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="text-gray-100 font-bold tracking-wide text-sm sm:text-base">{selectedSymbol}</span>
+            <span className="px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
               {selectedInterval}
             </span>
           </div>
 
           {/* Live Pulsing Dot */}
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
-            <span className="text-[11px] font-medium text-emerald-400">LIVE FEED</span>
+            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+            <span className="text-[10px] sm:text-[11px] font-medium text-emerald-400">LIVE FEED</span>
           </div>
 
           {/* Price Change */}
           {latestCandle && (
-            <span className={`text-xs font-mono font-semibold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span className={`text-[11px] sm:text-xs font-mono font-semibold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
               {isUp ? '▲ +' : '▼ '}{candleChange.toFixed(3)}%
             </span>
           )}
         </div>
 
         {/* Live Candle Countdown & Next Trade Timing */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 ml-auto">
           {/* Candle Close Countdown */}
-          <div className="flex items-center gap-2 bg-gray-900 border border-gray-700/60 px-3 py-1 rounded-lg">
-            <span className="text-gray-400 text-xs flex items-center gap-1">
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-gray-900 border border-gray-700/60 px-2 sm:px-3 py-1 rounded-lg">
+            <span className="text-gray-400 text-[11px] sm:text-xs flex items-center gap-1">
               <span>⏱️</span>
               <span className="hidden sm:inline">Candle Closes:</span>
             </span>
@@ -299,7 +299,7 @@ const CandlestickChart: React.FC = () => {
               {formatTime(candleSecondsRemaining)}
             </span>
             {/* Visual progress bar */}
-            <div className="w-12 h-1.5 bg-gray-800 rounded-full overflow-hidden hidden md:block">
+            <div className="w-10 sm:w-12 h-1.5 bg-gray-800 rounded-full overflow-hidden hidden md:block">
               <div
                 className="h-full bg-amber-400 transition-all duration-1000"
                 style={{ width: `${candleProgress}%` }}
@@ -308,7 +308,7 @@ const CandlestickChart: React.FC = () => {
           </div>
 
           {/* EMA Indicators Legend */}
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-2 sm:gap-3 text-xs hidden sm:flex">
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-0.5 bg-sky-400 inline-block rounded-full"></span>
               <span className="text-gray-400 text-[11px]">EMA 9</span>
@@ -322,7 +322,7 @@ const CandlestickChart: React.FC = () => {
       </div>
 
       {/* OHLC Interactive Status Bar */}
-      <div className="px-4 py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-4 text-xs font-mono text-gray-400">
+      <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400">
         {hoverData ? (
           <>
             <span className="text-gray-500">{hoverData.time}</span>
@@ -336,7 +336,7 @@ const CandlestickChart: React.FC = () => {
           </>
         ) : latestCandle ? (
           <>
-            <span className="text-gray-500">Latest:</span>
+            <span className="text-gray-500 hidden sm:inline">Latest:</span>
             <span>O: <span className="text-gray-300">{latestCandle.open.toFixed(5)}</span></span>
             <span>H: <span className="text-gray-300">{latestCandle.high.toFixed(5)}</span></span>
             <span>L: <span className="text-gray-300">{latestCandle.low.toFixed(5)}</span></span>
@@ -346,12 +346,12 @@ const CandlestickChart: React.FC = () => {
             </span>
           </>
         ) : (
-          <span className="text-gray-600">Hover over chart candles to inspect OHLC data</span>
+          <span className="text-gray-600">Tap or hover candles to inspect details</span>
         )}
       </div>
 
       {/* Lightweight Charts Canvas */}
-      <div ref={containerRef} className="flex-1 w-full min-h-[280px] sm:min-h-[380px]" />
+      <div ref={containerRef} className="flex-1 w-full min-h-[200px] sm:min-h-[380px]" />
     </div>
   );
 };

@@ -13,7 +13,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <Sidebar />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header />
-        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
+        <main className="flex-1 overflow-y-auto pb-24 md:pb-4">
           {children}
         </main>
       </div>

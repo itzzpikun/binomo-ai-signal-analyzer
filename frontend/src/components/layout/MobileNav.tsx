@@ -53,7 +53,7 @@ const mobileNavItems = [
 
 const MobileNav: React.FC = () => {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-950/95 border-t border-gray-800 flex items-center justify-around py-2 px-2 backdrop-blur-lg">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-950/95 border-t border-gray-800 flex items-center justify-around py-1 px-1 backdrop-blur-lg pb-[max(0.6rem,env(safe-area-inset-bottom))]">
       {mobileNavItems.map((item) => (
         <NavLink
           key={item.path}
@@ -61,15 +61,15 @@ const MobileNav: React.FC = () => {
           end={item.path === '/'}
           className={({ isActive }) =>
             clsx(
-              'flex flex-col items-center gap-1 py-1 px-3 rounded-lg text-[10px] font-semibold transition-colors',
+              'flex flex-col items-center gap-0.5 py-1 px-2 sm:px-3 rounded-lg text-[10px] font-semibold transition-colors',
               isActive
-                ? 'text-blue-400 font-bold'
+                ? 'text-blue-400 font-bold bg-blue-500/10'
                 : 'text-gray-400 hover:text-gray-200'
             )
           }
         >
-          <span className="flex-shrink-0">{item.icon}</span>
-          <span>{item.label}</span>
+          <span className="flex-shrink-0 scale-90">{item.icon}</span>
+          <span className="leading-tight">{item.label}</span>
         </NavLink>
       ))}
     </nav>
