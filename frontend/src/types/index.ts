@@ -97,6 +97,7 @@ export const ASSET_CATEGORIES: Record<AssetCategory, Asset[]> = {
     { symbol: 'AUD/USD', name: 'Australian Dollar / US Dollar', category: 'Forex', pip: 0.0001 },
   ],
   Crypto: [
+    { symbol: 'CRYPTO_IDX', name: 'Crypto IDX (Binomo 24/7)', category: 'Crypto' },
     { symbol: 'BTC/USD', name: 'Bitcoin / US Dollar', category: 'Crypto' },
     { symbol: 'ETH/USD', name: 'Ethereum / US Dollar', category: 'Crypto' },
     { symbol: 'BNB/USD', name: 'BNB / US Dollar', category: 'Crypto' },

@@ -98,6 +98,9 @@ def evaluate_with_ai(
         "awesome_oscillator": indicators.get("awesome_oscillator", {}).get("color"),
         "bollinger_signal": indicators.get("bollinger", {}).get("signal"),
         "sr_position": indicators.get("support_resistance", {}).get("position"),
+        "rsi_divergence": indicators.get("divergence", {}).get("signal", "NONE"),
+        "consecutive_run": f"{indicators.get('exhaustion', {}).get('run_count', 0)} {indicators.get('exhaustion', {}).get('run_direction', '')}",
+        "macro_trend": indicators.get("macro_trend", {}).get("trend", "NEUTRAL"),
     }
 
     pat_names = [p.get("name") for p in patterns] if patterns else []
@@ -109,16 +112,17 @@ MARKET SNAPSHOT:
 - Asset: {symbol}
 - Interval: {interval}
 - Last 6 Candles: {json.dumps(formatted_candles)}
-- Core Indicators: {json.dumps(compact_indicators)}
+- Core Indicators & Trend: {json.dumps(compact_indicators)}
 - Candlestick Patterns: {pat_names}
 - Algorithmic Signal: Direction={math_signal.get('direction')}, Confidence={math_signal.get('confidence')}%, Quality={math_signal.get('trade_quality')}
 - Key Reasons: {math_signal.get('reasons', {})}
 
 CRITERIA:
-1. Approve CALL only if momentum, trend alignment, and price action agree without imminent resistance exhaustion.
-2. Approve PUT only if momentum, trend alignment, and price action agree without imminent support exhaustion.
+1. Approve CALL only if momentum, trend alignment, and price action agree without imminent resistance exhaustion or 4+ consecutive green candle run.
+2. Approve PUT only if momentum, trend alignment, and price action agree without imminent support exhaustion or 4+ consecutive red candle run.
 3. If market is choppy, in an indecisive range, or oscillators contradict prevailing trend, set direction to WAIT.
-4. Assess trap_risk: 'LOW', 'MEDIUM', or 'HIGH'.
+4. If RSI Divergence is present at key S/R, give priority to the reversal setup.
+5. Assess trap_risk: 'LOW', 'MEDIUM', or 'HIGH'.
 
 Respond in STRICT JSON with keys:
 {{

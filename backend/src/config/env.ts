@@ -17,7 +17,9 @@ function requireEnv(key: string, fallback?: string): string {
 export const ENV = {
   PORT: parseInt(process.env['PORT'] ?? '5000', 10),
   MONGODB_URI: process.env['MONGODB_URI'] ?? 'mongodb://localhost:27017/binomo_analyzer',
-  TWELVE_DATA_API_KEY: process.env['TWELVE_DATA_API_KEY'] ?? '',
+  TWELVE_DATA_API_KEY: process.env['TWELVE_DATA_API_KEY'] || '2722ed98484d448f912b7019c92676ae',
+  GEMINI_API_KEY: process.env['GEMINI_API_KEY'] || '',
+  OPENAI_API_KEY: process.env['OPENAI_API_KEY'] || '',
   AI_ENGINE_URL: process.env['AI_ENGINE_URL'] ?? 'http://localhost:8000',
   FRONTEND_URL: process.env['FRONTEND_URL'] ?? 'http://localhost:3000',
   NODE_ENV: process.env['NODE_ENV'] ?? 'development',

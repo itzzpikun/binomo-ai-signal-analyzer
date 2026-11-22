@@ -17,9 +17,13 @@ export const marketController = {
     const symbol = (req.query['symbol'] as string) || 'EUR/USD';
     const interval = (req.query['interval'] as string) || '5min';
     const outputsize = parseInt((req.query['outputsize'] as string) || '100', 10);
+    const customKey =
+      (req.headers['x-market-key'] as string) ||
+      (req.query['apikey'] as string) ||
+      (req.query['api_key'] as string);
 
     try {
-      const candles = await marketDataService.getCandles(symbol, interval, outputsize);
+      const candles = await marketDataService.getCandles(symbol, interval, outputsize, customKey);
       res.json({ status: 'OK', symbol, interval, count: candles.length, candles });
     } catch (err) {
       const e = err as Error & { status?: string; statusCode?: number };
@@ -44,9 +48,13 @@ export const marketController = {
     }
 
     const symbol = req.query['symbol'] as string;
+    const customKey =
+      (req.headers['x-market-key'] as string) ||
+      (req.query['apikey'] as string) ||
+      (req.query['api_key'] as string);
 
     try {
-      const price = await marketDataService.getCurrentPrice(symbol);
+      const price = await marketDataService.getCurrentPrice(symbol, customKey);
       res.json({ status: 'OK', symbol, price, timestamp: new Date().toISOString() });
     } catch (err) {
       const e = err as Error & { status?: string; statusCode?: number };

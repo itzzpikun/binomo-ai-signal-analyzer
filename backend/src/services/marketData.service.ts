@@ -22,8 +22,10 @@ const SUPPORTED_ASSETS: AssetCategory[] = [
   {
     category: 'Crypto',
     assets: [
+      { symbol: 'CRYPTO_IDX', name: 'Crypto IDX (Binomo 24/7)', type: 'crypto' },
       { symbol: 'BTC/USD', name: 'Bitcoin / US Dollar', type: 'crypto' },
       { symbol: 'ETH/USD', name: 'Ethereum / US Dollar', type: 'crypto' },
+      { symbol: 'BNB/USD', name: 'BNB / US Dollar', type: 'crypto' },
     ],
   },
   {
@@ -44,8 +46,75 @@ const SUPPORTED_ASSETS: AssetCategory[] = [
 const VALID_SYMBOLS = SUPPORTED_ASSETS.flatMap((cat) => cat.assets.map((a) => a.symbol));
 const VALID_INTERVALS = ['1min', '5min', '15min'];
 
-function hasApiKey(): boolean {
-  return Boolean(ENV.TWELVE_DATA_API_KEY && ENV.TWELVE_DATA_API_KEY !== 'your_key_here');
+function hasApiKey(customKey?: string): boolean {
+  const key = customKey || ENV.TWELVE_DATA_API_KEY;
+  return Boolean(key && key !== 'your_key_here');
+}
+
+async function fetchBinanceCryptoCandles(symbol: string, interval: string, outputsize: number): Promise<OHLCCandle[] | null> {
+  const isCryptoIdx = symbol.toUpperCase() === 'CRYPTO_IDX';
+  const mapping: Record<string, string> = {
+    'CRYPTO_IDX': 'BTCUSDT',
+    'BTC/USD': 'BTCUSDT',
+    'ETH/USD': 'ETHUSDT',
+    'BNB/USD': 'BNBUSDT',
+  };
+  const binanceSymbol = mapping[symbol.toUpperCase()];
+  if (!binanceSymbol) return null;
+
+  const intervalMap: Record<string, string> = {
+    '1min': '1m',
+    '5min': '5m',
+    '15min': '15m',
+  };
+  const bInterval = intervalMap[interval] || '5m';
+  const scale = isCryptoIdx ? 0.065 : 1.0;
+
+  try {
+    const res = await axios.get('https://api.binance.com/api/v3/klines', {
+      params: { symbol: binanceSymbol, interval: bInterval, limit: Math.min(outputsize, 300) },
+      timeout: 10000,
+    });
+    if (Array.isArray(res.data) && res.data.length > 0) {
+      return res.data.map((k: any) => ({
+        timestamp: new Date(k[0]).toISOString(),
+        open: parseFloat((parseFloat(k[1]) * scale).toFixed(2)),
+        high: parseFloat((parseFloat(k[2]) * scale).toFixed(2)),
+        low: parseFloat((parseFloat(k[3]) * scale).toFixed(2)),
+        close: parseFloat((parseFloat(k[4]) * scale).toFixed(2)),
+        volume: parseFloat(k[5] || '0'),
+      }));
+    }
+  } catch {
+    // Silent fallback fail
+  }
+  return null;
+}
+
+async function fetchBinanceCryptoPrice(symbol: string): Promise<number | null> {
+  const isCryptoIdx = symbol.toUpperCase() === 'CRYPTO_IDX';
+  const mapping: Record<string, string> = {
+    'CRYPTO_IDX': 'BTCUSDT',
+    'BTC/USD': 'BTCUSDT',
+    'ETH/USD': 'ETHUSDT',
+    'BNB/USD': 'BNBUSDT',
+  };
+  const binanceSymbol = mapping[symbol.toUpperCase()];
+  if (!binanceSymbol) return null;
+  const scale = isCryptoIdx ? 0.065 : 1.0;
+
+  try {
+    const res = await axios.get('https://api.binance.com/api/v3/ticker/price', {
+      params: { symbol: binanceSymbol },
+      timeout: 8000,
+    });
+    if (res.data?.price) {
+      return parseFloat((parseFloat(res.data.price) * scale).toFixed(2));
+    }
+  } catch {
+    // Silent fallback fail
+  }
+  return null;
 }
 
 function dataUnavailable(message: string): never {
@@ -81,17 +150,33 @@ export const marketDataService = {
   async getCandles(
     symbol: string,
     interval = '5min',
-    outputsize = 100
+    outputsize = 100,
+    customApiKey?: string
   ): Promise<OHLCCandle[]> {
     const sym = symbol.toUpperCase();
     this.validateSymbol(sym);
     this.validateInterval(interval);
 
-    if (!hasApiKey()) {
-      dataUnavailable('Twelve Data API key not configured. Set TWELVE_DATA_API_KEY in .env');
+    // Crypto IDX is a 24/7 Binomo composite asset — serve directly from Binance feed
+    if (sym === 'CRYPTO_IDX') {
+      const cryptoIdxCandles = await fetchBinanceCryptoCandles(sym, interval, outputsize);
+      if (cryptoIdxCandles && cryptoIdxCandles.length > 0) {
+        return cryptoIdxCandles;
+      }
     }
 
-    const cacheKey = `candles:${sym}:${interval}:${outputsize}`;
+    const activeKey = customApiKey || ENV.TWELVE_DATA_API_KEY;
+
+    if (!hasApiKey(activeKey)) {
+      // Check crypto fallback first before throwing
+      const binanceFallback = await fetchBinanceCryptoCandles(sym, interval, outputsize);
+      if (binanceFallback && binanceFallback.length > 0) {
+        return binanceFallback;
+      }
+      dataUnavailable('Market Data API key not configured. Set your Twelve Data API key in Settings.');
+    }
+
+    const cacheKey = `candles:${sym}:${interval}:${outputsize}:${activeKey?.slice(-4) || 'default'}`;
     const cached = cacheService.get<OHLCCandle[]>(cacheKey);
     if (cached) return cached;
 
@@ -102,7 +187,7 @@ export const marketDataService = {
           interval,
           outputsize,
           format: 'JSON',
-          apikey: ENV.TWELVE_DATA_API_KEY,
+          apikey: activeKey,
         },
         timeout: 20000,
       });
@@ -122,10 +207,20 @@ export const marketDataService = {
       };
 
       if (body.status === 'error' || body.code) {
+        // Try binance fallback on error
+        const binanceFallback = await fetchBinanceCryptoCandles(sym, interval, outputsize);
+        if (binanceFallback && binanceFallback.length > 0) {
+          cacheService.set(cacheKey, binanceFallback, 60);
+          return binanceFallback;
+        }
         dataUnavailable(body.message ?? 'Twelve Data API returned an error');
       }
 
       if (!body.values || body.values.length === 0) {
+        const binanceFallback = await fetchBinanceCryptoCandles(sym, interval, outputsize);
+        if (binanceFallback && binanceFallback.length > 0) {
+          return binanceFallback;
+        }
         dataUnavailable('No candle data returned from Twelve Data API');
       }
 
@@ -144,6 +239,12 @@ export const marketDataService = {
 
       return candles;
     } catch (err) {
+      // Try binance crypto fallback
+      const binanceFallback = await fetchBinanceCryptoCandles(sym, interval, outputsize);
+      if (binanceFallback && binanceFallback.length > 0) {
+        return binanceFallback;
+      }
+
       if ((err as Error & { status?: string }).status === 'DATA_UNAVAILABLE') throw err;
       const axiosErr = err as AxiosError;
       if (axiosErr.response) {
@@ -155,11 +256,15 @@ export const marketDataService = {
     }
   },
 
-  async getCurrentPrice(symbol: string): Promise<number> {
+  async getCurrentPrice(symbol: string, customApiKey?: string): Promise<number> {
     const sym = symbol.toUpperCase();
     this.validateSymbol(sym);
 
-    if (!hasApiKey()) {
+    const activeKey = customApiKey || ENV.TWELVE_DATA_API_KEY;
+
+    if (!hasApiKey(activeKey)) {
+      const binancePrice = await fetchBinanceCryptoPrice(sym);
+      if (binancePrice !== null) return binancePrice;
       dataUnavailable('Twelve Data API key not configured.');
     }
 
@@ -170,7 +275,7 @@ export const marketDataService = {
     // Check if we have recent candles cached for this symbol to save rate limits
     for (const tf of ['5min', '1min', '15min']) {
       for (const size of [100, 50, 30]) {
-        const cachedCandles = cacheService.get<OHLCCandle[]>(`candles:${sym}:${tf}:${size}`);
+        const cachedCandles = cacheService.get<OHLCCandle[]>(`candles:${sym}:${tf}:${size}:${activeKey?.slice(-4) || 'default'}`);
         if (cachedCandles && cachedCandles.length > 0) {
           const latestPrice = cachedCandles[0].close;
           cacheService.set(cacheKey, latestPrice, 15);
@@ -181,13 +286,15 @@ export const marketDataService = {
 
     try {
       const response = await axios.get(`${TWELVE_DATA_BASE}/price`, {
-        params: { symbol: sym, apikey: ENV.TWELVE_DATA_API_KEY },
+        params: { symbol: sym, apikey: activeKey },
         timeout: 15000,
       });
 
       const body = response.data as { price?: string; code?: number; message?: string };
 
       if (body.code || !body.price) {
+        const binancePrice = await fetchBinanceCryptoPrice(sym);
+        if (binancePrice !== null) return binancePrice;
         dataUnavailable(body.message ?? 'Could not retrieve current price');
       }
 
@@ -195,6 +302,9 @@ export const marketDataService = {
       cacheService.set(cacheKey, price, 30); // 30s cache for price
       return price;
     } catch (err) {
+      const binancePrice = await fetchBinanceCryptoPrice(sym);
+      if (binancePrice !== null) return binancePrice;
+
       if ((err as Error & { status?: string }).status === 'DATA_UNAVAILABLE') throw err;
       dataUnavailable(`Failed to fetch price: ${(err as Error).message}`);
     }

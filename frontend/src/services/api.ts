@@ -69,15 +69,27 @@ export const getCandles = async (
   interval: TimeInterval,
   outputsize = 100
 ): Promise<CandlesResponse> => {
+  const userMarketKey = localStorage.getItem('user_market_key') || undefined;
   const response = await apiClient.get('/api/market/candles', {
-    params: { symbol, interval, outputsize },
+    params: {
+      symbol,
+      interval,
+      outputsize,
+      ...(userMarketKey ? { apikey: userMarketKey } : {}),
+    },
+    headers: userMarketKey ? { 'x-market-key': userMarketKey } : {},
   });
   return response.data;
 };
 
 export const getCurrentPrice = async (symbol: string): Promise<PriceResponse> => {
+  const userMarketKey = localStorage.getItem('user_market_key') || undefined;
   const response = await apiClient.get('/api/market/price', {
-    params: { symbol },
+    params: {
+      symbol,
+      ...(userMarketKey ? { apikey: userMarketKey } : {}),
+    },
+    headers: userMarketKey ? { 'x-market-key': userMarketKey } : {},
   });
   return response.data;
 };

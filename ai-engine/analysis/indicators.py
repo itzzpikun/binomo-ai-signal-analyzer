@@ -355,3 +355,172 @@ def calculate_awesome_oscillator(highs: np.ndarray, lows: np.ndarray) -> dict:
         "prev_ao": round(prev_ao, 6),
         "color": color,
     }
+
+
+def calculate_rsi_series(closes: np.ndarray, period: int = 14) -> np.ndarray:
+    """Computes full RSI time series for divergence detection."""
+    closes = np.array(closes, dtype=float)
+    n = len(closes)
+    rsi_arr = np.full(n, np.nan)
+    if n < period + 1:
+        return rsi_arr
+
+    deltas = np.diff(closes)
+    gains = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
+
+    if avg_loss == 0:
+        rsi_arr[period] = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        rsi_arr[period] = 100.0 - (100.0 / (1.0 + rs))
+
+    for i in range(period + 1, n):
+        idx = i - 1
+        avg_gain = (avg_gain * (period - 1) + gains[idx]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[idx]) / period
+        if avg_loss == 0:
+            rsi_arr[i] = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi_arr[i] = 100.0 - (100.0 / (1.0 + rs))
+
+    return rsi_arr
+
+
+def calculate_divergence(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, lookback: int = 25) -> dict:
+    """
+    RSI Divergence Detection Engine.
+    Bullish Divergence: Price Lower Low + RSI Higher Low -> 85%+ Reversal Setup.
+    Bearish Divergence: Price Higher High + RSI Lower High -> 85%+ Reversal Setup.
+    """
+    if len(closes) < 30:
+        return {"bullish_divergence": False, "bearish_divergence": False, "signal": "NONE", "score": 0.0}
+
+    rsi_series = calculate_rsi_series(closes)
+    sub_closes = closes[-lookback:]
+    sub_rsi = rsi_series[-lookback:]
+    sub_lows = lows[-lookback:]
+    sub_highs = highs[-lookback:]
+
+    # Find swing lows
+    bull_div = False
+    bear_div = False
+    bull_score = 0.0
+    bear_score = 0.0
+
+    # Recent low vs prior low in lookback window
+    mid = lookback // 2
+    prior_low_idx = int(np.argmin(sub_lows[:mid]))
+    recent_low_idx = mid + int(np.argmin(sub_lows[mid:]))
+
+    prior_low_price = sub_lows[prior_low_idx]
+    recent_low_price = sub_lows[recent_low_idx]
+
+    prior_low_rsi = sub_rsi[prior_low_idx]
+    recent_low_rsi = sub_rsi[recent_low_idx]
+
+    # Bullish Divergence check (Price Lower Low, RSI Higher Low)
+    if not np.isnan(prior_low_rsi) and not np.isnan(recent_low_rsi):
+        if recent_low_price < prior_low_price and recent_low_rsi > (prior_low_rsi + 1.5):
+            if recent_low_rsi <= 45.0:  # Valid only in lower RSI zone
+                bull_div = True
+                bull_score = 2.5
+
+    # Find swing highs
+    prior_high_idx = int(np.argmax(sub_highs[:mid]))
+    recent_high_idx = mid + int(np.argmax(sub_highs[mid:]))
+
+    prior_high_price = sub_highs[prior_high_idx]
+    recent_high_price = sub_highs[recent_high_idx]
+
+    prior_high_rsi = sub_rsi[prior_high_idx]
+    recent_high_rsi = sub_rsi[recent_high_idx]
+
+    # Bearish Divergence check (Price Higher High, RSI Lower High)
+    if not np.isnan(prior_high_rsi) and not np.isnan(recent_high_rsi):
+        if recent_high_price > prior_high_price and recent_high_rsi < (prior_high_rsi - 1.5):
+            if recent_high_rsi >= 55.0:  # Valid only in upper RSI zone
+                bear_div = True
+                bear_score = 2.5
+
+    signal = "BULLISH_DIVERGENCE" if bull_div else ("BEARISH_DIVERGENCE" if bear_div else "NONE")
+
+    return {
+        "bullish_divergence": bull_div,
+        "bearish_divergence": bear_div,
+        "signal": signal,
+        "bull_score": bull_score,
+        "bear_score": bear_score,
+    }
+
+
+def calculate_candle_exhaustion(candles: list[dict]) -> dict:
+    """
+    Consecutive Run Exhaustion Filter.
+    Prevents buying at top of 4-5 consecutive green candles or selling at bottom of 4-5 red candles.
+    """
+    if len(candles) < 6:
+        return {"run_count": 0, "run_direction": "NONE", "exhaustion_risk": False}
+
+    recent = candles[-6:]
+    colors = []
+    for c in recent:
+        cl = float(c.get("close", 0))
+        op = float(c.get("open", 0))
+        colors.append("GREEN" if cl >= op else "RED")
+
+    # Count consecutive matching colors backwards from last candle
+    target = colors[-1]
+    count = 0
+    for col in reversed(colors):
+        if col == target:
+            count += 1
+        else:
+            break
+
+    # 4 or more consecutive candles = exhaustion danger
+    is_exhaustion = count >= 4
+
+    return {
+        "run_count": count,
+        "run_direction": target,
+        "exhaustion_risk": is_exhaustion,
+        "warning_en": f"{count} consecutive {target} candles printed. High risk of immediate pullback/pause candle." if is_exhaustion else "Healthy candle progression.",
+        "warning_hi": f"{count} lagataar {target} candles ban chuki hain. Agli candle me pullback/pause hone ka high risk hai." if is_exhaustion else "Normal candle structure.",
+    }
+
+
+def calculate_macro_trend(closes: np.ndarray) -> dict:
+    """
+    Macro Higher-Timeframe Trend Filter (EMA 50 & EMA 200).
+    Rule: Never trade against the macro trend.
+    """
+    n = len(closes)
+    if n < 30:
+        return {"trend": "NEUTRAL", "slope": 0.0, "strength": "WEAK"}
+
+    ema50 = calculate_ema(closes, min(50, n))
+    ema_macro = calculate_ema(closes, min(200, n)) if n >= 60 else calculate_ema(closes, min(100, n))
+
+    last_close = float(closes[-1])
+
+    if last_close > ema50 and ema50 > ema_macro:
+        trend = "STRONG_BULLISH"
+    elif last_close < ema50 and ema50 < ema_macro:
+        trend = "STRONG_BEARISH"
+    elif last_close > ema50:
+        trend = "MILD_BULLISH"
+    elif last_close < ema50:
+        trend = "MILD_BEARISH"
+    else:
+        trend = "NEUTRAL"
+
+    return {
+        "trend": trend,
+        "ema50": round(ema50, 5),
+        "ema_macro": round(ema_macro, 5),
+    }

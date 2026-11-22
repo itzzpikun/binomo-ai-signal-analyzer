@@ -25,6 +25,9 @@ from analysis.indicators import (
     calculate_volume_analysis,
     calculate_adx,
     calculate_awesome_oscillator,
+    calculate_divergence,
+    calculate_candle_exhaustion,
+    calculate_macro_trend,
 )
 from analysis.patterns import detect_patterns
 from analysis.gemini_arbiter import evaluate_with_gemini
@@ -409,6 +412,9 @@ def generate_signal(
     adx_dict = calculate_adx(highs, lows, closes, period=5)
     ao_dict = calculate_awesome_oscillator(highs, lows)
     patterns = detect_patterns(candles[-15:])
+    divergence_dict = calculate_divergence(highs, lows, closes)
+    exhaustion_dict = calculate_candle_exhaustion(candles)
+    macro_trend_dict = calculate_macro_trend(closes)
 
     # ── Scoring Individual Components ──────────────────────────────────────────
     rsi_score, rsi_sig, rsi_bull, rsi_bear = _score_rsi_advanced(closes, rsi_val)
@@ -431,6 +437,11 @@ def generate_signal(
         + macd_bear + stoch_bear + bb_bear + sr_bear + pat_bear
     )
 
+    if divergence_dict.get("bullish_divergence"):
+        all_bull_reasons.insert(0, "🌟 Bullish RSI Divergence: Price Lower Low vs RSI Higher Low (High-Probability Reversal)")
+    if divergence_dict.get("bearish_divergence"):
+        all_bear_reasons.insert(0, "🌟 Bearish RSI Divergence: Price Higher High vs RSI Lower High (High-Probability Reversal)")
+
     # ── Confluence Count ───────────────────────────────────────────────────────
     bull_confirmations = sum(1 for s in [
         rsi_score > 0.3,
@@ -443,6 +454,7 @@ def generate_signal(
         bb_score > 0.3,
         sr_score > 0.4,
         pattern_score > 0.4,
+        divergence_dict.get("bullish_divergence", False),
     ] if s)
 
     bear_confirmations = sum(1 for s in [
@@ -456,6 +468,7 @@ def generate_signal(
         bb_score < -0.3,
         sr_score < -0.4,
         pattern_score < -0.4,
+        divergence_dict.get("bearish_divergence", False),
     ] if s)
 
     # ── Weighted Sum Calculation ───────────────────────────────────────────────
@@ -557,16 +570,42 @@ def generate_signal(
         quality_label = "Consolidation / Weak Setup — Wait for clear confirmation"
 
     # ── COUNTER-TREND VETO ────────────────────────────────────────────────────
-    if direction == "CALL" and trend_direction == -1 and not has_sr_reversal_up:
+    if direction == "CALL" and trend_direction == -1 and not has_sr_reversal_up and not divergence_dict.get("bullish_divergence"):
         direction = "WAIT"
         trade_quality = "COUNTER-TREND BLOCKED"
         quality_label = "Bullish signal blocked — Prevailing EMA trend is bearish"
         all_bear_reasons.append("🚫 Counter-trend entry vetoed (Guide Rule: Do not trade against main trend)")
-    elif direction == "PUT" and trend_direction == 1 and not has_sr_reversal_down:
+    elif direction == "PUT" and trend_direction == 1 and not has_sr_reversal_down and not divergence_dict.get("bearish_divergence"):
         direction = "WAIT"
         trade_quality = "COUNTER-TREND BLOCKED"
         quality_label = "Bearish signal blocked — Prevailing EMA trend is bullish"
         all_bull_reasons.append("🚫 Counter-trend entry vetoed (Guide Rule: Do not trade against main trend)")
+
+    # ── CONSECUTIVE RUN EXHAUSTION VETO ───────────────────────────────────────
+    if exhaustion_dict.get("exhaustion_risk"):
+        if direction == "CALL" and exhaustion_dict.get("run_direction") == "GREEN":
+            direction = "WAIT"
+            trade_quality = "EXHAUSTION VETO"
+            quality_label = f"VETO: {exhaustion_dict['run_count']} consecutive green candles (Exhaustion risk)"
+            all_bear_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
+        elif direction == "PUT" and exhaustion_dict.get("run_direction") == "RED":
+            direction = "WAIT"
+            trade_quality = "EXHAUSTION VETO"
+            quality_label = f"VETO: {exhaustion_dict['run_count']} consecutive red candles (Exhaustion risk)"
+            all_bull_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
+
+    # ── MACRO TREND VETO (EMA 50 / EMA 200) ──────────────────────────────────
+    macro_dir = macro_trend_dict.get("trend", "NEUTRAL")
+    if macro_dir == "STRONG_BEARISH" and direction == "CALL" and not divergence_dict.get("bullish_divergence"):
+        direction = "WAIT"
+        trade_quality = "MACRO DOWNTREND VETO"
+        quality_label = "VETO: Higher-timeframe macro trend is strongly bearish"
+        all_bear_reasons.append("🚫 Macro Trend Veto: Price < EMA 50 < EMA 200 (Do not buy into macro downtrend)")
+    elif macro_dir == "STRONG_BULLISH" and direction == "PUT" and not divergence_dict.get("bearish_divergence"):
+        direction = "WAIT"
+        trade_quality = "MACRO UPTREND VETO"
+        quality_label = "VETO: Higher-timeframe macro trend is strongly bullish"
+        all_bull_reasons.append("🚫 Macro Trend Veto: Price > EMA 50 > EMA 200 (Do not sell into macro uptrend)")
 
     # ── Confidence Score Calculation ──────────────────────────────────────────
     confluence_count = max(bull_confirmations, bear_confirmations)
@@ -589,6 +628,9 @@ def generate_signal(
         "awesome_oscillator": ao_dict,
         "bollinger": {"signal": bb_sig},
         "support_resistance": {"position": sr_pos},
+        "divergence": divergence_dict,
+        "exhaustion": exhaustion_dict,
+        "macro_trend": macro_trend_dict,
     }
 
     initial_math_signal = {
@@ -703,6 +745,9 @@ def generate_signal(
                 "signal": stoch_sig,
             },
             "volume": vol_analysis,
+            "divergence": divergence_dict,
+            "exhaustion": exhaustion_dict,
+            "macro_trend": macro_trend_dict,
         },
         "patterns": patterns,
         "reasons": {
