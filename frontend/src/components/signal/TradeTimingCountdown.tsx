@@ -50,7 +50,7 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
   const isLateWindow = !isEntryWindowOpen && !isGetReady;
 
   const direction =
-    (currentSignal?.direction === 'CALL' || currentSignal?.direction === 'PUT') && (currentSignal?.confidence || 0) >= 70
+    (currentSignal?.direction === 'CALL' || currentSignal?.direction === 'PUT') && (currentSignal?.confidence || 0) >= 65
       ? currentSignal.direction
       : 'WAIT';
   const confidence = currentSignal?.confidence || 0;
@@ -168,7 +168,7 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
                 : isGetReady
                 ? direction !== 'WAIT'
                   ? `Prepare Binomo screen! Enter ${direction} precisely as candle opens in ${secondsRemaining}s.`
-                  : `🚨 Next candle in ${secondsRemaining}s! Market leaning towards ${probableBias} (${probablePct}%). Prepare screen but enter only on 70%+ confirmation.`
+                  : `🚨 Next candle in ${secondsRemaining}s! Market leaning towards ${probableBias} (${probablePct}%). Prepare screen but enter only on 65%+ confirmation.`
                 : isLateWindow && direction !== 'WAIT'
                 ? `⛔ DO NOT ENTER NOW! Candle already ran ${elapsedInCandle}s. Entering mid-candle leads to wick losses. Wait for next candle open in ${formatMMSS(secondsRemaining)}.`
                 : `Status: WAIT • Market developing towards ${probableBias} (${probablePct}%). Next candle opens at ${nextOpenTimeStr}.`}

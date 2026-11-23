@@ -301,9 +301,9 @@ Return JSON ONLY with this schema:
       }
       let finalDir: 'CALL' | 'PUT' | 'WAIT' = (aiDir === 'CALL' || aiDir === 'PUT') ? aiDir : 'WAIT';
       let finalConf = conf;
-      if (finalDir !== 'WAIT' && finalConf < 70) {
+      if (finalDir !== 'WAIT' && finalConf < 65) {
         finalDir = 'WAIT';
-        finalConf = Math.min(finalConf, 65);
+        finalConf = Math.min(finalConf, 63);
       }
       return {
         provider: providerName,

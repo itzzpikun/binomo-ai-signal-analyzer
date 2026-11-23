@@ -856,28 +856,28 @@ export function analyzeCandlesNative(
     filterTriggered = true;
     filterReason = `Candle Exhaustion: ${consecutiveSame} consecutive red candles. Bounce risk high. WAIT.`;
     waitReasons.push(filterReason);
-  } else if (dominantScore < 72) {
+  } else if (dominantScore < 65) {
     filterTriggered = true;
-    filterReason = `Setup Score (${dominantScore}/100) is below the institutional 72-point quantitative threshold`;
+    filterReason = `Setup Score (${dominantScore}/100) is below the institutional 65-point quantitative threshold`;
     waitReasons.push(filterReason);
   }
 
   if (filterTriggered) {
     direction = 'WAIT';
-    trade_quality = filterReason || 'AWAITING 70+ SCORE CONFLUENCE';
+    trade_quality = filterReason || 'AWAITING 65+ SCORE CONFLUENCE';
   } else if (dominantScore >= 85) {
     direction = dominantBias;
     trade_quality = `STRONG_SETUP (${dominantScore} pts)`;
     matchedFrameworks.push(`100-Point Quantitative Engine: Strong ${direction} (${dominantScore}/100)`);
-  } else if (dominantScore >= 70) {
+  } else if (dominantScore >= 65) {
     direction = dominantBias;
     trade_quality = `QUALIFIED_SETUP (${dominantScore} pts)`;
     matchedFrameworks.push(`Quantitative Engine: ${direction} (${dominantScore}/100)`);
   }
 
-  // Cap score in breakdown when in WAIT so it never leaks >= 70
-  if (direction === 'WAIT' && scoreBreakdown.totalScore >= 70) {
-    scoreBreakdown.totalScore = 68;
+  // Cap score in breakdown when in WAIT so it never leaks >= 65
+  if (direction === 'WAIT' && scoreBreakdown.totalScore >= 65) {
+    scoreBreakdown.totalScore = 63;
   }
 
   // 5. Candle-Slot Locking (guarantees zero flicker during current candle)
@@ -887,10 +887,10 @@ export function analyzeCandlesNative(
   const latchKey = `${symbol.toUpperCase()}_${interval}`;
   const currentLatch = signalLatchMap.get(latchKey);
 
-  const effectiveConfidence = direction === 'WAIT' ? Math.min(dominantScore, 68) : dominantScore;
+  const effectiveConfidence = direction === 'WAIT' ? Math.min(dominantScore, 63) : dominantScore;
 
   if (!filterTriggered && currentLatch && currentLatch.candleSlot === candleSlot) {
-    if ((currentLatch.direction === 'CALL' || currentLatch.direction === 'PUT') && currentLatch.confidence >= 70) {
+    if ((currentLatch.direction === 'CALL' || currentLatch.direction === 'PUT') && currentLatch.confidence >= 65) {
       direction = currentLatch.direction;
       trade_quality = currentLatch.trade_quality;
     }
@@ -950,7 +950,7 @@ export function analyzeCandlesNative(
       entry_window: 'Candle Open Window: 00:00 - 00:10 (Strict)',
       expiry_duration: `${interval} (Fixed)`,
       confluence_count: dominantScore,
-      quality_tier: direction !== 'WAIT' ? (dominantScore >= 85 ? 'Strong Setup (85-100 pts)' : 'Moderate Setup (70-84 pts)') : 'Awaiting 70+ Score Confluence',
+      quality_tier: direction !== 'WAIT' ? (dominantScore >= 85 ? 'Strong Setup (85-100 pts)' : 'Moderate Setup (65-84 pts)') : 'Awaiting 65+ Score Confluence',
       quality_label: `${direction} Setup Score: ${dominantScore}/100 (${marketRegime})`,
       matched_frameworks: matchedFrameworks,
     },

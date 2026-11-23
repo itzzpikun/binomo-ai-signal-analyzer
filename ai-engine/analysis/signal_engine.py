@@ -670,11 +670,11 @@ def generate_signal(
         filter_reason = f"Candle Exhaustion: {exhaustion_dict.get('run_count', 4)}+ consecutive red candles. Bounce risk high. WAIT."
         all_bull_reasons.append(filter_reason)
 
-    # Filter 9: Strict 72%+ Institutional Quantitative Threshold & Min 4 Confirmations
-    elif dominant_score < 72 or (dominant_bias == "CALL" and bull_confirmations < 4) or (dominant_bias == "PUT" and bear_confirmations < 4):
+    # Filter 9: Strict 65%+ Institutional Quantitative Threshold & Min 4 Confirmations
+    elif dominant_score < 65 or (dominant_bias == "CALL" and bull_confirmations < 4) or (dominant_bias == "PUT" and bear_confirmations < 4):
         filter_triggered = True
         req_conf = bull_confirmations if dominant_bias == "CALL" else bear_confirmations
-        filter_reason = f"Setup Score ({dominant_score}/100) or Confluence ({req_conf}/10) below high-accuracy threshold (Min 72 pts, 4 confluences)"
+        filter_reason = f"Setup Score ({dominant_score}/100) or Confluence ({req_conf}/10) below high-accuracy threshold (Min 65 pts, 4 confluences)"
         if dominant_bias == "CALL":
             all_bear_reasons.append(filter_reason)
         else:
@@ -685,12 +685,12 @@ def generate_signal(
 
     if filter_triggered:
         direction = "WAIT"
-        trade_quality = filter_reason or "AWAITING 70+ SCORE CONFLUENCE"
+        trade_quality = filter_reason or "AWAITING 65+ SCORE CONFLUENCE"
         quality_label = f"Trade Paused: {trade_quality}"
-        confidence = round(min(float(dominant_score), 65.0), 1)
+        confidence = round(min(float(dominant_score), 63.0), 1)
     else:
         direction = dominant_bias
-        confidence = round(min(max(float(dominant_score), 70.0), 96.0), 1)
+        confidence = round(min(max(float(dominant_score), 65.0), 96.0), 1)
         if dominant_score >= 85 and len(matched_frameworks) > 0:
             trade_quality = "A+ PREMIUM SETUP"
             framework_tag = f" [{matched_frameworks[0]}]"
@@ -766,14 +766,14 @@ def generate_signal(
             trade_quality = f"AI CONFIRMED ({trade_quality})"
             all_bull_reasons.append(f"🤖 {provider_name}: {gemini_result.get('analysis_en')}")
 
-    # Enforce strict 70%+ cutoff on final confidence
-    if direction == "WAIT" and confidence >= 70:
-        confidence = 65.0
-    elif direction != "WAIT" and confidence < 70:
+    # Enforce strict 65%+ cutoff on final confidence
+    if direction == "WAIT" and confidence >= 65:
+        confidence = 63.0
+    elif direction != "WAIT" and confidence < 65:
         direction = "WAIT"
-        trade_quality = f"AWAITING 70+ SCORE CONFLUENCE ({confidence}/100)"
+        trade_quality = f"AWAITING 65+ SCORE CONFLUENCE ({confidence}/100)"
         quality_label = f"Trade Paused: {trade_quality}"
-        confidence = 65.0
+        confidence = 63.0
 
     # ── Exact Entry Timing & Horizon Information ──────────────────────────────
     entry_timing_info = {
