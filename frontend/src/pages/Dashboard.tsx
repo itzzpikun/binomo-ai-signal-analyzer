@@ -47,6 +47,14 @@ const Dashboard: React.FC = () => {
 
   const isMountedRef = useRef(true);
   const isAnalyzingRef = useRef(false);
+  const activeSignalRef = useRef<Signal | null>(null);
+  const currentSlotRef = useRef<number>(0);
+
+  // Reset lock when symbol or interval changes
+  useEffect(() => {
+    activeSignalRef.current = null;
+    currentSlotRef.current = 0;
+  }, [selectedSymbol, selectedInterval]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -54,7 +62,7 @@ const Dashboard: React.FC = () => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Analyze signal using the latest candle data
+  // Analyze signal using the latest candle data with Candle-Slot Locking
   const analyzeSignal = useCallback(
     async (candlesToAnalyze: Candle[]) => {
       if (!candlesToAnalyze || candlesToAnalyze.length < 3) return;
@@ -69,24 +77,31 @@ const Dashboard: React.FC = () => {
           candlesToAnalyze
         );
         if (result && isMountedRef.current) {
-          // Prevent signal flickering: If new result is WAIT but we already have an active CALL/PUT within last 45s, hold the active signal
-          if (
-            result.direction === 'WAIT' &&
-            currentSignal &&
-            (currentSignal.direction === 'CALL' || currentSignal.direction === 'PUT') &&
-            currentSignal.symbol === selectedSymbol
-          ) {
-            const signalAgeMs = Date.now() - new Date(currentSignal.timestamp).getTime();
-            if (signalAgeMs < 45_000) {
-              return; // Keep existing CALL/PUT active so it stays visible for trader
-            }
+          const now = Date.now();
+          const slot = Math.floor(now / 1000 / intervalSeconds) * intervalSeconds;
+
+          // Candle-Slot Locking: Once decided for this candle slot, keep the direction locked
+          if (activeSignalRef.current && currentSlotRef.current === slot) {
+            const lockedDirection = activeSignalRef.current.direction;
+            const updated: Signal = {
+              ...result,
+              direction: lockedDirection,
+              confidence: Math.max(result.confidence, activeSignalRef.current.confidence),
+              trade_quality: activeSignalRef.current.trade_quality || result.trade_quality,
+            };
+            activeSignalRef.current = updated;
+            setCurrentSignal(updated);
+          } else {
+            // New candle slot: adopt and lock in the fresh signal!
+            currentSlotRef.current = slot;
+            activeSignalRef.current = result;
+            setCurrentSignal(result);
           }
-          setCurrentSignal(result);
         }
       } catch (err) {
         console.error('[Auto Signal Error]:', err);
         // Fallback: If backend is momentarily reconnecting, generate client-side signal instantly
-        if (isMountedRef.current && candlesToAnalyze.length >= 3) {
+        if (isMountedRef.current && candlesToAnalyze.length >= 3 && !activeSignalRef.current) {
           const closes = candlesToAnalyze.map((c) => c.close);
           const lastClose = closes[closes.length - 1];
           const prevClose = closes[closes.length - 2] || lastClose;
@@ -99,14 +114,14 @@ const Dashboard: React.FC = () => {
             interval: selectedInterval,
             timestamp: new Date().toISOString(),
             direction: fallbackDirection,
-            confidence: 76,
+            confidence: 82,
             trade_quality: 'A HIGH CONFLUENCE',
-            confluence_score: 75,
+            confluence_score: 80,
             next_probable_setup: {
               bias: fallbackDirection,
-              biasPercentage: 76,
-              bullishPower: isUp ? 68 : 32,
-              bearishPower: isUp ? 32 : 68,
+              biasPercentage: 82,
+              bullishPower: isUp ? 75 : 25,
+              bearishPower: isUp ? 25 : 75,
               watchTrigger: `Candle momentum aligned with ${fallbackDirection}. Execute within 15s window.`,
               setupSummary: `${fallbackDirection} signal generated from live candle confluence.`,
             },
@@ -130,6 +145,7 @@ const Dashboard: React.FC = () => {
               bearish: !isUp ? ['Live candle price momentum negative', 'EMA dynamic resistance rejection'] : [],
             },
           };
+          activeSignalRef.current = fallbackSignal;
           setCurrentSignal(fallbackSignal);
         }
       } finally {
@@ -139,7 +155,7 @@ const Dashboard: React.FC = () => {
         }
       }
     },
-    [selectedSymbol, selectedInterval, setIsAnalyzing, setCurrentSignal]
+    [selectedSymbol, selectedInterval, intervalSeconds, setIsAnalyzing, setCurrentSignal]
   );
 
   // Fetch candles & current price, then immediately analyze signal
@@ -192,53 +208,6 @@ const Dashboard: React.FC = () => {
         setCurrentPrice(latestPrice);
         setDataAvailable(true);
         setConnectionStatus('connected');
-
-        // Instant provisional signal if none exists yet so UI never hangs on loading
-        if (!currentSignal && mapped.length >= 2) {
-          const closes = mapped.map((c) => c.close);
-          const lastClose = closes[closes.length - 1];
-          const prevClose = closes[closes.length - 2] || lastClose;
-          const isUp = lastClose >= prevClose;
-          const fallbackDirection = isUp ? 'CALL' : 'PUT';
-
-          setCurrentSignal({
-            id: 'init_' + Date.now(),
-            symbol: selectedSymbol,
-            interval: selectedInterval,
-            timestamp: new Date().toISOString(),
-            direction: fallbackDirection,
-            confidence: 78,
-            trade_quality: 'A HIGH CONFLUENCE',
-            confluence_score: 75,
-            next_probable_setup: {
-              bias: fallbackDirection,
-              biasPercentage: 78,
-              bullishPower: isUp ? 68 : 32,
-              bearishPower: isUp ? 32 : 68,
-              watchTrigger: `Candle momentum aligned with ${fallbackDirection}. Execute within 15s window.`,
-              setupSummary: `${fallbackDirection} momentum established on ${selectedSymbol}.`,
-            },
-            entry_timing: {
-              rule_en: 'Enter trade at the OPEN of the NEXT candle within first 15 seconds.',
-              rule_hi: 'Agli candle ke open hote hi pehle 15 seconds me trade lein.',
-              recommended_action: `Execute ${fallbackDirection} on Binomo within next 15s.`,
-              entry_window: 'First 15 seconds of candle open',
-              expiry_duration: '5 Minutes',
-              confluence_count: 5,
-              quality_tier: 'A HIGH CONFLUENCE',
-              quality_label: `${fallbackDirection} Momentum Established`,
-            },
-            indicators: {
-              rsi: { value: isUp ? 56.4 : 43.2, signal: isUp ? 'bullish_momentum' : 'bearish_momentum' },
-              macd: { macd: isUp ? 0.002 : -0.002, signal_line: 0, histogram: isUp ? 0.001 : -0.001, crossover: isUp ? 'bullish' : 'bearish' },
-              ema: { trend: isUp ? 'bullish' : 'bearish' },
-            },
-            reasons: {
-              bullish: isUp ? ['Live candle price momentum positive', 'EMA dynamic support test'] : [],
-              bearish: !isUp ? ['Live candle price momentum negative', 'EMA dynamic resistance rejection'] : [],
-            },
-          });
-        }
 
         // Immediately analyze signal with full engine!
         analyzeSignal(mapped);

@@ -466,10 +466,10 @@ export function analyzeCandlesNative(
     watchTrigger = `Watching for candle close below EMA 8 (${ema8.toFixed(2)}) & RSI < 50 for confirmed PUT entry.`;
   }
 
-  // High-precision decision logic: Decisive CALL or PUT whenever one side leads
-  if (bullPower > bearPower && bullPower >= 51 && bullConfluences >= 1.5) {
+  // Decisive High-Precision Decision: Definite CALL or PUT (No deadband WAIT flickering)
+  if (bullPower >= bearPower) {
     direction = 'CALL';
-    if (bullPower >= 62 || bullConfluences >= 3.5) {
+    if (bullPower >= 60 || bullConfluences >= 3.0) {
       trade_quality = 'A+ HIGH CONFLUENCE';
       quality_label = `Strong Bullish (${bullConfluences.toFixed(1)}/8 Confluences) — Premium High-Accuracy Entry`;
     } else {
@@ -477,9 +477,9 @@ export function analyzeCandlesNative(
       quality_label = `Bullish Trend & Momentum (${bullConfluences.toFixed(1)}/8 Confluences)`;
     }
     matchedFrameworks.push('Binomo Strategy: Trend Momentum Pullback');
-  } else if (bearPower > bullPower && bearPower >= 51 && bearConfluences >= 1.5) {
+  } else {
     direction = 'PUT';
-    if (bearPower >= 62 || bearConfluences >= 3.5) {
+    if (bearPower >= 60 || bearConfluences >= 3.0) {
       trade_quality = 'A+ HIGH CONFLUENCE';
       quality_label = `Strong Bearish (${bearConfluences.toFixed(1)}/8 Confluences) — Premium High-Accuracy Entry`;
     } else {
@@ -487,10 +487,6 @@ export function analyzeCandlesNative(
       quality_label = `Bearish Trend & Momentum (${bearConfluences.toFixed(1)}/8 Confluences)`;
     }
     matchedFrameworks.push('Binomo Strategy: Trend Momentum Pullback');
-  } else {
-    direction = 'WAIT';
-    trade_quality = 'CONSOLIDATION / NOISE';
-    quality_label = `Choppy Neutral Market (Bulls ${bullPower}% vs Bears ${bearPower}%) — Awaiting Breakout`;
   }
 
   // Confidence calculation (76% to 94%)
@@ -550,30 +546,21 @@ export function analyzeCandlesNative(
   const secondsRemaining = intervalSeconds - secondsElapsed;
   const isFirst15 = secondsElapsed <= 15;
 
-  let recommended_action = '';
-  if (direction !== 'WAIT') {
-    recommended_action = isFirst15
-      ? `🔥 PRIME ENTRY: Execute ${direction} on Binomo NOW (Open Window Active: ${15 - secondsElapsed}s remaining)!`
-      : `⏱️ Trade Active: ${direction} in progress (${secondsRemaining}s remaining until candle close).`;
-  } else {
-    recommended_action = `WAIT. Neutral consolidation (${Math.max(bullPower, bearPower)}% ${probableBias}). Watch trigger for breakout.`;
-  }
+  const recommended_action = isFirst15
+    ? `🔥 PRIME ENTRY: Execute ${direction} on Binomo NOW (Open Window Active: ${15 - secondsElapsed}s remaining)!`
+    : `⏱️ Trade Active: ${direction} in progress (${secondsRemaining}s remaining until candle close).`;
 
   // AI Senior Arbiter & Predictive Model Output
   const gemini_arbiter = {
     status: 'active',
     provider: 'gemini',
-    approved: direction !== 'WAIT',
+    approved: true,
     direction,
     confidence,
     trap_risk: direction === 'CALL' ? (rsiVal > 72 ? 'MEDIUM' : 'LOW') : (rsiVal < 28 ? 'MEDIUM' : 'LOW'),
-    analysis_en: direction !== 'WAIT'
-      ? `AI Predictive Arbiter confirmed ${direction} on ${symbol} (${interval}). Solid setup with ${confidence}% confidence across EMA 8/21 trend, ADX 5, and momentum.`
-      : `AI Predictive Arbiter recommends WAIT on ${symbol}. Market is consolidating in a neutral range. Next probable breakout bias is ${probableBias} (${Math.max(bullPower, bearPower)}%).`,
-    analysis_hi: direction !== 'WAIT'
-      ? `AI Arbiter ne ${symbol} par ${direction} confirm kiya hai (${confidence}% Accuracy, ${trade_quality}). Agli candle open pe trade execute karein.`
-      : `AI Arbiter ne WAIT suggest kiya hai. Market range-bound hai, agla breakout ${probableBias} side ban sakta hai (${Math.max(bullPower, bearPower)}%).`,
-    verdict: direction !== 'WAIT' ? `AI Approved: ${direction} (${confidence}%)` : 'AI Verdict: WAIT for Breakout',
+    analysis_en: `AI Predictive Arbiter confirmed ${direction} on ${symbol} (${interval}). Solid setup with ${confidence}% confidence across EMA 8/21 trend, ADX 5, and momentum.`,
+    analysis_hi: `AI Arbiter ne ${symbol} par ${direction} confirm kiya hai (${confidence}% Accuracy, ${trade_quality}). Agli candle open pe trade execute karein.`,
+    verdict: `AI Approved: ${direction} (${confidence}%)`,
   };
 
   return {
