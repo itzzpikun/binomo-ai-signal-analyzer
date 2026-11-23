@@ -19,7 +19,8 @@ RUN python3 -m venv /app/ai-engine/venv && \
     /app/ai-engine/venv/bin/pip install --no-cache-dir -r /app/ai-engine/requirements.txt
 
 # Install frontend dependencies and build production static files
-RUN cd /app/frontend && npm install && npm run build
+RUN cd /app/frontend && npm install && npm run build && \
+    mkdir -p /app/backend/public && cp -r /app/frontend/dist/* /app/backend/public/
 
 # Install backend dependencies and build TypeScript server
 RUN cd /app/backend && npm install && npm run build
