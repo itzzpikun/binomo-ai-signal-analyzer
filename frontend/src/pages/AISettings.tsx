@@ -146,12 +146,12 @@ const AISettings: React.FC = () => {
           <span>AI Settings & Model Alternatives</span>
         </h1>
         <p className="text-gray-400 text-xs sm:text-sm mt-1">
-          Configure API keys for Groq, Google Gemini, OpenAI, and DeepSeek, and enforce the 95% accuracy rule.
+          Configure API keys for Groq, Google Gemini, OpenAI, DeepSeek, and OpenRouter with ≥75% confidence threshold.
         </p>
       </div>
 
       {/* ────────────────────────────────────────────────────────── */}
-      {/* 🎯 95% ACCURACY RULE BANNER                                */}
+      {/* 🎯 75%+ CONFIDENCE RULE BANNER                             */}
       {/* ────────────────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-emerald-950/80 via-blue-950/60 to-gray-900 border border-emerald-500/50 rounded-2xl p-4 sm:p-5 shadow-xl flex items-start gap-3.5">
         <span className="text-2xl sm:text-3xl p-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
@@ -160,14 +160,14 @@ const AISettings: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-emerald-300 font-extrabold text-sm sm:text-base">
-              Strict 95% Accuracy Rule Active
+              Strict ≥75% Model Confidence Rule Active
             </span>
             <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-200 border border-emerald-500/40">
               Win-Rate Guard
             </span>
           </div>
           <p className="text-gray-300 text-xs mt-1 leading-relaxed">
-            The AI engine provides <b>CALL (BUY)</b> or <b>PUT (SELL)</b> only when the signal reaches <b>≥95% accuracy and confluence</b>. If the setup does not satisfy the 95% confidence threshold, it remains in <b>WAIT</b> to prevent losses in choppy markets.
+            The AI engine provides <b>CALL (BUY)</b> or <b>PUT (SELL)</b> when model confidence reaches <b>≥75%</b>. If market is in choppy consolidation or confidence is below 75%, it provides <b>WAIT</b> to protect your capital.
           </p>
         </div>
       </div>
@@ -451,9 +451,9 @@ const AISettings: React.FC = () => {
       {/* 📊 SCORING WEIGHTS INFO                                   */}
       {/* ────────────────────────────────────────────────────────── */}
       <div className="bg-gray-900/90 border border-gray-800 rounded-2xl p-4 sm:p-5">
-        <h2 className="text-white font-semibold text-sm mb-2">95% Confluence Scoring Weights</h2>
+        <h2 className="text-white font-semibold text-sm mb-2">Confluence Scoring Weights (≥75% Confidence)</h2>
         <p className="text-gray-400 text-xs mb-3">
-          To achieve 95% accuracy, multiple strategies must align simultaneously across momentum, volume, and moving averages.
+          To achieve ≥75% confidence, multiple strategies must align across momentum, moving averages, and market structure.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[

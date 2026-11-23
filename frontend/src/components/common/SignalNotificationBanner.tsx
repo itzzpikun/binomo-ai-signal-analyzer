@@ -52,13 +52,12 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
           ? (currentSignal.next_probable_setup.bias as 'CALL' | 'PUT')
           : null);
 
-    // User Rule: "95% accurate signal was received after signal will provide call put other wise wait"
-    // 1. Current viewed asset (check if 1m, 5m, 15m all match AND accuracy >= 95%)
+    // User Rule: "after 75% model confidence show signal put or call otherwise wait"
+    // 1. Current viewed asset (check if accuracy >= 75%)
     if (
       currentSignal &&
       effCurrentDir &&
-      (currentSignal as any)?.timeframe_alignment?.isTripleConfirmed &&
-      currentSignal.confidence >= 95
+      currentSignal.confidence >= 75
     ) {
       const ageMs = now - new Date(currentSignal.timestamp).getTime();
       if (ageMs < 30_000) {
@@ -72,15 +71,11 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
       }
     }
 
-    // 2. Scanned multi-assets (backend /api/scan/all strictly filters to 1m+5m+15m all matched AND accuracy >= 95%)
+    // 2. Scanned multi-assets (accuracy >= 75%)
     for (const sig of multiSignals) {
       if (
         (sig.direction === 'CALL' || sig.direction === 'PUT') &&
-        sig.confidence >= 95 &&
-        (sig.trade_quality?.includes('TRIPLE') ||
-          (sig.timeframes?.['1m'] === sig.direction &&
-           sig.timeframes?.['5m'] === sig.direction &&
-           sig.timeframes?.['15m'] === sig.direction))
+        sig.confidence >= 75
       ) {
         const ageMs = now - new Date(sig.timestamp).getTime();
         if (ageMs < 30_000) {
@@ -147,11 +142,11 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-semibold text-gray-300">
-            Triple-Timeframe Scanner Active (1M + 5M + 15M)
+            ⚡ AI Signal Engine Active (≥75% Confidence Filter)
           </span>
           <span className="hidden sm:inline text-gray-500">•</span>
           <span className="text-gray-400 hidden sm:inline">
-            Auto-notifies ONLY when 1M, 5M & 15M ALL 3 agree AND AI Accuracy is ≥95%
+            Auto-notifies when Model Confidence reaches ≥75% for verified CALL / PUT entries
           </span>
         </div>
         {!hasPermission && (

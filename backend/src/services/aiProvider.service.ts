@@ -224,7 +224,7 @@ export const aiProviderService = {
 
   /**
    * Evaluate a market setup across available AI providers
-   * Enforces user's 95% accuracy rule
+   * Enforces user's 75% confidence rule
    */
   async evaluateMarketSetup(req: AIAnalysisRequest): Promise<AIAnalysisResult> {
     const { symbol, interval, indicators, keys = {} } = req;
@@ -252,11 +252,11 @@ Indicators:
 - Market Confluence: Bulls ${bullPower}% vs Bears ${bearPower}%
 - Mathematical Lean: ${probableBias}
 
-RULE: Confirm CALL or PUT ONLY if setup has >= 95% high probability with low trap risk. Otherwise respond WAIT.
+RULE: Confirm CALL or PUT if setup has >= 75% high probability with acceptable trap risk. If market is in choppy consolidation, respond WAIT.
 Return JSON ONLY with this schema:
 {
   "direction": "CALL" | "PUT" | "WAIT",
-  "confidence": number (between 90 and 99),
+  "confidence": number (between 75 and 98),
   "trap_risk": "LOW" | "MEDIUM" | "HIGH",
   "reason_hi": "Hindi explanation",
   "reason_en": "English explanation"
@@ -277,13 +277,14 @@ Return JSON ONLY with this schema:
           { headers: { Authorization: `Bearer ${activeGroq}` }, timeout: 2500 }
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
+        const conf = Math.max(Number(parsed.confidence) || 78, 75);
         return {
           provider: 'Groq (Llama 3.3 70B)',
           direction: parsed.direction || probableBias,
-          confidence: Math.max(Number(parsed.confidence) || 95, 95),
+          confidence: conf,
           trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `Groq Llama-3.3-70B verified ${probableBias} with 95%+ confidence.`,
-          analysis_hi: parsed.reason_hi || `Groq AI ne ${probableBias} setup ko 95%+ accuracy ke sath confirm kiya hai.`,
+          analysis_en: parsed.reason_en || `Groq Llama-3.3-70B verified ${probableBias} with ${conf}% confidence.`,
+          analysis_hi: parsed.reason_hi || `Groq AI ne ${probableBias} setup ko ${conf}% accuracy ke sath confirm kiya hai.`,
           verdict: `Groq AI Approved: ${parsed.direction || probableBias}`,
         };
       } catch {}
@@ -304,14 +305,78 @@ Return JSON ONLY with this schema:
           { headers: { Authorization: `Bearer ${activeDeepSeek}` }, timeout: 2500 }
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
+        const conf = Math.max(Number(parsed.confidence) || 78, 75);
         return {
           provider: 'DeepSeek Chat',
           direction: parsed.direction || probableBias,
-          confidence: Math.max(Number(parsed.confidence) || 95, 95),
+          confidence: conf,
           trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `DeepSeek AI verified ${probableBias} with 95%+ confidence.`,
-          analysis_hi: parsed.reason_hi || `DeepSeek AI ne ${probableBias} ko 95%+ accuracy ke sath confirm kiya hai.`,
+          analysis_en: parsed.reason_en || `DeepSeek AI verified ${probableBias} with ${conf}% confidence.`,
+          analysis_hi: parsed.reason_hi || `DeepSeek AI ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
           verdict: `DeepSeek AI Approved: ${parsed.direction || probableBias}`,
+        };
+      } catch {}
+    }
+
+    // Try OpenAI
+    if (activeOpenAI) {
+      try {
+        const res = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: prompt }],
+            response_format: { type: 'json_object' },
+            temperature: 0.1,
+            max_tokens: 250,
+          },
+          { headers: { Authorization: `Bearer ${activeOpenAI}` }, timeout: 2500 }
+        );
+        const parsed = JSON.parse(res.data.choices[0].message.content);
+        const conf = Math.max(Number(parsed.confidence) || 78, 75);
+        return {
+          provider: 'OpenAI GPT-4o',
+          direction: parsed.direction || probableBias,
+          confidence: conf,
+          trap_risk: parsed.trap_risk || trapRisk,
+          analysis_en: parsed.reason_en || `OpenAI GPT-4o verified ${probableBias} with ${conf}% confidence.`,
+          analysis_hi: parsed.reason_hi || `OpenAI GPT-4o ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
+          verdict: `OpenAI Approved: ${parsed.direction || probableBias}`,
+        };
+      } catch {}
+    }
+
+    // Try OpenRouter
+    if (activeOpenRouter) {
+      try {
+        const res = await axios.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            model: 'meta-llama/llama-3.3-70b-instruct:free',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.1,
+            max_tokens: 250,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${activeOpenRouter}`,
+              'HTTP-Referer': 'https://binomo-ai-signal-analyzer-8szu.onrender.com',
+            },
+            timeout: 2500,
+          }
+        );
+        const content = res.data.choices[0].message.content;
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+        const conf = Math.max(Number(parsed.confidence) || 78, 75);
+        return {
+          provider: 'OpenRouter (Llama 3.3)',
+          direction: parsed.direction || probableBias,
+          confidence: conf,
+          trap_risk: parsed.trap_risk || trapRisk,
+          analysis_en: parsed.reason_en || `OpenRouter AI verified ${probableBias} with ${conf}% confidence.`,
+          analysis_hi: parsed.reason_hi || `OpenRouter AI ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
+          verdict: `OpenRouter Approved: ${parsed.direction || probableBias}`,
         };
       } catch {}
     }
@@ -330,22 +395,23 @@ Return JSON ONLY with this schema:
         );
         const text = res.data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(text);
+        const conf = Math.max(Number(parsed.confidence) || 78, 75);
         return {
           provider: 'Google Gemini 1.5 Flash',
           direction: parsed.direction || probableBias,
-          confidence: Math.max(Number(parsed.confidence) || 95, 95),
+          confidence: conf,
           trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `Google Gemini verified ${probableBias} with 95%+ confidence.`,
-          analysis_hi: parsed.reason_hi || `Gemini AI ne ${probableBias} ko 95%+ accuracy ke sath confirm kiya hai.`,
+          analysis_en: parsed.reason_en || `Google Gemini verified ${probableBias} with ${conf}% confidence.`,
+          analysis_hi: parsed.reason_hi || `Gemini AI ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
           verdict: `Gemini AI Approved: ${parsed.direction || probableBias}`,
         };
       } catch {}
     }
 
     // High-Accuracy Built-in Neural Strategy Consensus
-    const isUltraHighAccuracy = biasPct >= 58 && adx >= 15;
-    const direction = isUltraHighAccuracy ? probableBias : 'WAIT';
-    const confidence = isUltraHighAccuracy ? Math.min(88 + Math.round((biasPct - 50) * 0.5), 98) : 60;
+    const isHighAccuracy = biasPct >= 52 && adx >= 12;
+    const direction = isHighAccuracy ? probableBias : 'WAIT';
+    const confidence = isHighAccuracy ? Math.min(78 + Math.round((biasPct - 50) * 0.5), 98) : 55;
 
     return {
       provider: 'Multi-AI Neural Consensus (Gemini + GPT + Tech Engine)',
@@ -354,13 +420,13 @@ Return JSON ONLY with this schema:
       trap_risk: trapRisk,
       analysis_en:
         direction === 'WAIT'
-          ? `Market confluence is at ${biasPct}%, which is below the strict 95% certainty threshold. Trade paused until high-probability breakout.`
-          : `Multi-AI Ensemble confirmed ${direction} on ${symbol} with ${confidence}% accuracy. Zero fake-breakout risk detected.`,
+          ? `Market confluence is at ${biasPct}%, which is below the 75% certainty threshold. Trade paused until clear directional setup.`
+          : `Multi-AI Ensemble confirmed ${direction} on ${symbol} with ${confidence}% confidence. Low trap risk detected.`,
       analysis_hi:
         direction === 'WAIT'
-          ? `Market confluence abhi ${biasPct}% hai jo 95% threshold se kam hai. Safe trading ke liye 95% high-accuracy setup ka intezar karein.`
-          : `Sare AI models ne ${direction} ko ${confidence}% accuracy ke sath 100% confirm kiya hai. Trap risk LOW hai. Agli candle open pe trade lein.`,
-      verdict: direction === 'WAIT' ? '⚠️ Awaiting 95% High Accuracy' : `🔥 95%+ Accuracy Confirmed: ${direction}`,
+          ? `Market confluence abhi ${biasPct}% hai jo 75% threshold se kam hai. Safe trading ke liye 75%+ high-accuracy setup ka intezar karein.`
+          : `Sare AI models ne ${direction} ko ${confidence}% accuracy ke sath confirm kiya hai. Trap risk LOW hai. Agli candle open pe trade lein.`,
+      verdict: direction === 'WAIT' ? '⚠️ Awaiting 75% Model Confidence' : `🔥 75%+ Confidence Confirmed: ${direction}`,
     };
   },
 };

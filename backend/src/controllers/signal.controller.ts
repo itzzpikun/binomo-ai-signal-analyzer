@@ -97,18 +97,20 @@ export const signalController = {
           confirmedDirection: isTripleMatch ? s1m.direction : null,
         };
 
-        // User Rule: "95% accurate signal was received after signal will provide call put other wise wait"
-        // When 1M, 5M, and 15M ALL match, confluence hits 95%+ confirmed!
+        // User Rule: "after 75% model confidence show signal put or call otherwise wait"
+        // Triple alignment gives an extra confluence bonus, but is not mandatory
         if (isTripleMatch) {
-          finalSignal.confidence = Math.max(conf, 95);
+          finalSignal.confidence = Math.max(conf, 90);
           finalSignal.direction = s1m.direction;
-          finalSignal.trade_quality = 'A+ 95% ACCURACY CONFIRMED (1M + 5M + 15M)';
-        } else if (finalSignal.confidence >= 95) {
-          finalSignal.direction = rawResult.next_probable_setup?.bias || 'CALL';
-          finalSignal.trade_quality = 'A+ 95% ACCURACY CONFIRMED';
+          finalSignal.trade_quality = 'A+ 90%+ ACCURACY CONFIRMED';
+        } else if (finalSignal.confidence >= 75) {
+          if (finalSignal.direction !== 'CALL' && finalSignal.direction !== 'PUT') {
+            finalSignal.direction = rawResult.next_probable_setup?.bias || 'CALL';
+          }
+          finalSignal.trade_quality = 'HIGH ACCURACY (≥75% CONFIRMED)';
         } else {
           finalSignal.direction = 'WAIT';
-          finalSignal.trade_quality = 'AWAITING 95% CONFLUENCE';
+          finalSignal.trade_quality = 'AWAITING 75% CONFLUENCE';
         }
       } catch {}
 

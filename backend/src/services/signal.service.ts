@@ -93,10 +93,10 @@ export const signalService = {
             analysis_hi: aiEval.analysis_hi,
             verdict: aiEval.verdict,
           };
-          if (aiEval.confidence >= 95) {
+          if (aiEval.confidence >= 75) {
             nativeResult.confidence = aiEval.confidence;
             nativeResult.direction = aiEval.direction;
-            nativeResult.trade_quality = `A+ 95% ACCURACY CONFIRMED (${aiEval.provider})`;
+            nativeResult.trade_quality = `HIGH ACCURACY (≥75% CONFIRMED - ${aiEval.provider})`;
           }
         }
       } catch (e) {

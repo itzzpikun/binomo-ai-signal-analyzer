@@ -449,11 +449,11 @@ export function analyzeCandlesNative(
   }
 
   // 3. Direction & Confidence Decision
-  // User Rule: "95% accurate signal was received after signal will provide call put other wise wait"
-  // Provide CALL or PUT ONLY when accuracy/confluence reaches >= 95%! Otherwise provide WAIT!
+  // User Rule: "after 75% model confidence show signal put or call otherwise wait"
+  // Provide CALL or PUT when accuracy/confluence reaches >= 75%! Otherwise provide WAIT!
   let direction: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
-  let trade_quality = 'AWAITING 95% ACCURACY';
-  let quality_label = 'Waiting for 95% High-Accuracy Confluence';
+  let trade_quality = 'AWAITING 75% ACCURACY';
+  let quality_label = 'Waiting for 75% High-Accuracy Confluence';
   const matchedFrameworks: string[] = [];
 
   const totalScore = bullConfluences + bearConfluences;
@@ -463,20 +463,20 @@ export function analyzeCandlesNative(
 
   let watchTrigger = '';
   if (probableBias === 'CALL') {
-    watchTrigger = `Watching for candle close above EMA 8 (${ema8.toFixed(2)}) & RSI > 50 to confirm 95% CALL entry.`;
+    watchTrigger = `Watching for candle close above EMA 8 (${ema8.toFixed(2)}) & RSI > 50 to confirm CALL entry.`;
   } else {
-    watchTrigger = `Watching for candle close below EMA 8 (${ema8.toFixed(2)}) & RSI < 50 to confirm 95% PUT entry.`;
+    watchTrigger = `Watching for candle close below EMA 8 (${ema8.toFixed(2)}) & RSI < 50 to confirm PUT entry.`;
   }
 
   // Market Stability Check:
   const isMarketUnstable = (adxData.adx < 14 && Math.abs(bullPower - bearPower) <= 8) || (totalScore < 1.0);
 
-  // Confidence calculation (can reach up to 98% with strong multi-indicator confluence)
+  // Confidence calculation (reaches 75% to 98% based on multi-indicator confluence)
   let confidence = 50;
   if (probableBias === 'CALL') {
-    confidence = Math.min(Math.round(80 + (bullPower - 50) * 0.5 + bullConfluences * 2.2), 98);
+    confidence = Math.min(Math.round(75 + (bullPower - 50) * 0.4 + bullConfluences * 2.0), 98);
   } else {
-    confidence = Math.min(Math.round(80 + (bearPower - 50) * 0.5 + bearConfluences * 2.2), 98);
+    confidence = Math.min(Math.round(75 + (bearPower - 50) * 0.4 + bearConfluences * 2.0), 98);
   }
 
   if (isMarketUnstable) {
@@ -485,19 +485,19 @@ export function analyzeCandlesNative(
     trade_quality = 'UNSTABLE MARKET (CHOP)';
     quality_label = 'Market Unstable / Rangebound — High Risk of False Breakout';
     matchedFrameworks.push('Market Volatility Guard: Sideways Chop Filter');
-  } else if (confidence >= 95) {
-    // 95% High-Accuracy Threshold Achieved! Provide decisive CALL or PUT
+  } else if (confidence >= 75) {
+    // 75%+ High-Accuracy Threshold Achieved! Provide decisive CALL or PUT
     direction = probableBias;
-    trade_quality = 'A+ 95% ACCURACY CONFIRMED';
-    quality_label = `🔥 High Accuracy (${confidence}% / 8 Confluences) — Confirmed 95%+ ${direction} Entry`;
-    matchedFrameworks.push('Binomo Strategy: 95% High Accuracy Confluence');
+    trade_quality = confidence >= 90 ? 'A+ 90%+ ACCURACY CONFIRMED' : 'HIGH ACCURACY (≥75% CONFIRMED)';
+    quality_label = `🔥 High Accuracy (${confidence}% / 8 Confluences) — Confirmed ${direction} Entry`;
+    matchedFrameworks.push('Binomo Strategy: 75%+ High Accuracy Confluence');
     matchedFrameworks.push('Trend Momentum Pullback Confirmation');
   } else {
-    // Below 95% threshold: Provide WAIT until 95% accuracy is confirmed
+    // Below 75% threshold: Provide WAIT until 75% accuracy is confirmed
     direction = 'WAIT';
-    trade_quality = 'AWAITING 95% CONFLUENCE';
-    quality_label = `Current Confluence: ${confidence}% (Requires 95% for Entry) — Awaiting Final Confirmation`;
-    matchedFrameworks.push('Strict 95% Accuracy Filter');
+    trade_quality = 'AWAITING 75% CONFLUENCE';
+    quality_label = `Current Confluence: ${confidence}% (Requires 75% for Entry) — Awaiting Final Confirmation`;
+    matchedFrameworks.push('Strict 75% Accuracy Filter');
   }
 
   // ── Candle-Slot Locking ("fluctuation ko bilkul khatam karo") ──

@@ -80,13 +80,13 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       : 'Awaiting candle close below EMA 8/21 dynamic resistance for PUT confirmation.'
   );
 
-  // User Rule: "95% accurate signal was received after signal will provide call put other wise wait"
-  // Provide CALL or PUT ONLY when accuracy is >= 95%! Otherwise provide WAIT!
-  const has95Accuracy = signal.confidence >= 95;
+  // User Rule: "after 75% model confidence show signal put or call otherwise wait"
+  // Provide CALL or PUT when confidence is >= 75%! Otherwise provide WAIT!
+  const has75Accuracy = signal.confidence >= 75;
   const effectiveDirection: 'CALL' | 'PUT' | 'WAIT' =
-    has95Accuracy && (signal.direction === 'CALL' || signal.direction === 'PUT')
+    has75Accuracy && (signal.direction === 'CALL' || signal.direction === 'PUT')
       ? signal.direction
-      : (has95Accuracy && probableBias
+      : (has75Accuracy && probableBias
         ? probableBias
         : 'WAIT');
 
@@ -101,7 +101,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       glow: 'shadow-emerald-500/20',
       icon: '↑',
       label: 'CALL (BUY)',
-      sublabel: `🔥 95%+ High Accuracy (${signal.confidence}%) Confirmed`,
+      sublabel: `🔥 75%+ High Accuracy (${signal.confidence}%) Confirmed`,
       actionPrompt: 'Buy Higher (Green / Call on Binomo)',
     },
     PUT: {
@@ -112,7 +112,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       glow: 'shadow-red-500/20',
       icon: '↓',
       label: 'PUT (SELL)',
-      sublabel: `🔥 95%+ High Accuracy (${signal.confidence}%) Confirmed`,
+      sublabel: `🔥 75%+ High Accuracy (${signal.confidence}%) Confirmed`,
       actionPrompt: 'Buy Lower (Red / Put on Binomo)',
     },
     WAIT: {
@@ -122,14 +122,14 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       text: 'text-amber-400',
       glow: 'shadow-amber-500/10',
       icon: '⚠️',
-      label: `WAIT (Awaiting 95% — Current: ${signal.confidence}%)`,
-      sublabel: 'Confluence below 95% threshold. Waiting for high-accuracy setup.',
-      actionPrompt: 'Wait for 95% confirmed setup before entry',
+      label: `WAIT (Awaiting 75% — Current: ${signal.confidence}%)`,
+      sublabel: 'Confluence below 75% threshold. Waiting for high-accuracy setup.',
+      actionPrompt: 'Wait for 75% confirmed setup before entry',
     },
   };
 
   const config = directionConfig[effectiveDirection] || directionConfig.WAIT;
-  const quality = signal.trade_quality || (signal.confidence >= 95 ? 'A+ 95% ACCURACY CONFIRMED' : 'AWAITING 95% CONFLUENCE');
+  const quality = signal.trade_quality || (signal.confidence >= 75 ? 'HIGH ACCURACY (≥75% CONFIRMED)' : 'AWAITING 75% CONFLUENCE');
 
   return (
     <div className={clsx(
@@ -184,52 +184,6 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
           <span>Trade on Binomo</span>
           <span className="text-sm">↗</span>
         </a>
-      </div>
-
-      {/* 3-Timeframe MTF Alignment Row (1M + 5M + 15M) */}
-      <div className="w-full bg-gray-950/80 border border-gray-800 rounded-xl px-3 py-2 flex items-center justify-between text-xs flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 font-bold text-gray-300">
-          <span>📊</span>
-          <span>1M / 5M / 15M Alignment:</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold border ${
-            (signal as any)?.timeframe_alignment?.['1m'] === 'CALL'
-              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-              : (signal as any)?.timeframe_alignment?.['1m'] === 'PUT'
-              ? 'bg-red-950/60 border-red-500/50 text-red-300'
-              : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-          }`}>
-            1M: {(signal as any)?.timeframe_alignment?.['1m'] || signal?.direction || 'CALL'}
-          </span>
-          <span className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold border ${
-            (signal as any)?.timeframe_alignment?.['5m'] === 'CALL'
-              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-              : (signal as any)?.timeframe_alignment?.['5m'] === 'PUT'
-              ? 'bg-red-950/60 border-red-500/50 text-red-300'
-              : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-          }`}>
-            5M: {(signal as any)?.timeframe_alignment?.['5m'] || signal?.direction || 'CALL'}
-          </span>
-          <span className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold border ${
-            (signal as any)?.timeframe_alignment?.['15m'] === 'CALL'
-              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-              : (signal as any)?.timeframe_alignment?.['15m'] === 'PUT'
-              ? 'bg-red-950/60 border-red-500/50 text-red-300'
-              : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-          }`}>
-            15M: {(signal as any)?.timeframe_alignment?.['15m'] || signal?.direction || 'CALL'}
-          </span>
-          {(signal as any)?.timeframe_alignment?.isTripleConfirmed ? (
-            <span className="px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-300 font-extrabold text-[10px] border border-yellow-500/40">
-              🔥 100% MATCHED
-            </span>
-          ) : (
-            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-semibold text-[10px] border border-blue-500/40">
-              Triple Scan Active
-            </span>
-          )}
-        </div>
       </div>
 
       {/* ────────────────────────────────────────────────────────── */}
@@ -293,7 +247,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
                 <span>⚠️</span>
-                <span>AWAITING 95% ACCURACY CONFIRMATION</span>
+                <span>AWAITING 75% CONFIDENCE CONFIRMATION</span>
               </span>
               <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                 probableBias === 'CALL'
