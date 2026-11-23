@@ -5,6 +5,7 @@ import CandlestickChart from '../components/charts/CandlestickChart';
 import SignalCard from '../components/signal/SignalCard';
 import IndicatorPanel from '../components/signal/IndicatorPanel';
 import ReasonsList from '../components/signal/ReasonsList';
+import { BinomoTradePanel } from '../components/signal/BinomoTradePanel';
 import AssetSelector from '../components/market/AssetSelector';
 import TimeframeSelector from '../components/market/TimeframeSelector';
 import PriceTicker from '../components/market/PriceTicker';
@@ -281,6 +282,12 @@ const Dashboard: React.FC = () => {
           {/* Signal panel — 40% Desktop / Full on Mobile */}
           <div className="w-full lg:w-2/5 flex flex-col gap-2.5 sm:gap-3">
             <SignalCard signal={currentSignal} isAnalyzing={isAnalyzing} />
+
+            {/* Binomo Live Execution Order Panel */}
+            <BinomoTradePanel
+              direction={currentSignal?.direction}
+              confidence={currentSignal?.confidence}
+            />
 
             {/* Background auto-analyzing subtle status indicator */}
             {isAnalyzing && currentSignal && (

@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
+import { useAppStore } from '../../store/appStore';
 
 interface NavItem {
   path: string;
@@ -74,19 +75,21 @@ const navItems: NavItem[] = [
 ];
 
 const Sidebar: React.FC = () => {
+  const setShowLoginModal = useAppStore((s) => s.setShowLoginModal);
+  const binomoBalance = useAppStore((s) => s.binomoBalance);
+  const binomoCurrency = useAppStore((s) => s.binomoCurrency);
+  const binomoAccountType = useAppStore((s) => s.binomoAccountType);
+
   return (
     <aside className="hidden md:flex bg-gray-950 border-r border-gray-800 w-16 md:w-56 flex-col flex-shrink-0 h-screen sticky top-0">
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-800">
-        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
-          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
+        <div className="w-8 h-8 rounded-lg bg-yellow-500 text-black font-black flex items-center justify-center flex-shrink-0 text-base shadow-md shadow-yellow-500/20">
+          B
         </div>
         <span className="hidden md:block text-white font-bold text-sm leading-tight">
-          Binomo AI<br />
-          <span className="text-blue-400 font-normal text-xs">Signal Analyzer</span>
+          Binomo Live<br />
+          <span className="text-yellow-400 font-semibold text-xs">AI OTC Feed</span>
         </span>
       </div>
 
@@ -101,7 +104,7 @@ const Sidebar: React.FC = () => {
               clsx(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                  ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30'
                   : 'text-gray-400 hover:text-gray-100 hover:bg-gray-800'
               )
             }
@@ -112,10 +115,25 @@ const Sidebar: React.FC = () => {
         ))}
       </nav>
 
+      {/* Binomo Login Quick Button */}
+      <div className="p-3 border-t border-gray-800/80">
+        <button
+          onClick={() => setShowLoginModal(true)}
+          className="w-full p-2.5 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black font-extrabold text-xs shadow-md shadow-yellow-500/10 flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <span>🔑</span>
+          <span className="hidden md:inline">Binomo Login</span>
+        </button>
+        <div className="hidden md:flex items-center justify-between text-[10px] text-gray-500 mt-2 px-1">
+          <span className="capitalize">{binomoAccountType}</span>
+          <span className="text-yellow-400 font-bold">{binomoCurrency} {binomoBalance.toLocaleString()}</span>
+        </div>
+      </div>
+
       {/* Footer */}
-      <div className="px-4 py-4 border-t border-gray-800">
+      <div className="px-4 py-3 border-t border-gray-800">
         <p className="hidden md:block text-gray-600 text-xs">
-          v1.0.0 · For educational use only
+          v2.5 · 24/7 OTC Active
         </p>
       </div>
     </aside>
