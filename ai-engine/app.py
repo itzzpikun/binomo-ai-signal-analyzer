@@ -183,8 +183,8 @@ def _enrich_signal(sig: Dict[str, Any], symbol: str, interval: str) -> Dict[str,
     vol_score = int(round(base_factor * 15))
 
     total_score = trend_score + mom_score + pa_score + mtf_score + vol_score
-    if direction == "WAIT" and total_score >= 75:
-        total_score = 68
+    if direction == "WAIT" and total_score >= 65:
+        total_score = 60
 
     score_breakdown = {
         "trendScore": trend_score,
@@ -298,7 +298,7 @@ def signal_history():
 # ── Scan All Route ────────────────────────────────────────────────────────────
 @app.get("/api/scan/all")
 def scan_all():
-    """Scan all 26 assets and return signals with setup score >= 75."""
+    """Scan all 26 assets and return signals with setup score >= 65."""
     qualified = []
     scanned_count = 0
 
@@ -309,12 +309,12 @@ def scan_all():
         sig = generate_signal(candles)
         enriched = _enrich_signal(sig, sym, "1min")
 
-        if enriched["direction"] != "WAIT" and enriched["confidence"] >= 75:
+        if enriched["direction"] != "WAIT" and enriched["confidence"] >= 65:
             qualified.append(enriched)
 
     return jsonify({
         "status": "OK",
-        "filter": "ACCURACY_FILTER_75_PLUS",
+        "filter": "ACCURACY_FILTER_65_PLUS",
         "scanned": scanned_count,
         "active_signals": len(qualified),
         "signals": qualified,
@@ -529,13 +529,7 @@ def internal_error(e):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # If in Docker (/app/backend exists), Node runs on PORT (5001/10000), so Python runs on 8000.
-    # If in native Render Python, Python runs on PORT.
-    if os.path.exists("/app/backend"):
-        port = int(os.getenv("FLASK_PORT", 8000))
-    else:
-        port = int(os.getenv("PORT") or os.getenv("FLASK_PORT") or 8000)
-
+    port = int(os.getenv("PORT", 10000))
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     logger.info("Starting Unified Binomo Engine on port %d (debug=%s)", port, debug)
     app.run(host="0.0.0.0", port=port, debug=debug)

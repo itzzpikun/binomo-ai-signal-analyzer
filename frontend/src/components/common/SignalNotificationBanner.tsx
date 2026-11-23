@@ -52,12 +52,12 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
           ? (currentSignal.next_probable_setup.bias as 'CALL' | 'PUT')
           : null);
 
-    // User Rule: "after 75% model confidence show signal put or call otherwise wait"
-    // 1. Current viewed asset (check if accuracy >= 75%)
+    // User Rule: "after 65% model confidence show signal put or call otherwise wait"
+    // 1. Current viewed asset (check if accuracy >= 65%)
     if (
       currentSignal &&
       effCurrentDir &&
-      currentSignal.confidence >= 75
+      currentSignal.confidence >= 65
     ) {
       const ageMs = now - new Date(currentSignal.timestamp).getTime();
       if (ageMs < 30_000) {
@@ -71,11 +71,11 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
       }
     }
 
-    // 2. Scanned multi-assets (accuracy >= 75%)
+    // 2. Scanned multi-assets (accuracy >= 65%)
     for (const sig of multiSignals) {
       if (
         (sig.direction === 'CALL' || sig.direction === 'PUT') &&
-        sig.confidence >= 75
+        sig.confidence >= 65
       ) {
         const ageMs = now - new Date(sig.timestamp).getTime();
         if (ageMs < 30_000) {

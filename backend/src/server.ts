@@ -160,20 +160,17 @@ async function bootstrap(): Promise<void> {
   // ── WebSocket ─────────────────────────────────────────────
   const wsService = new WebSocketService(server);
 
-  // ── MongoDB ───────────────────────────────────────────────
-  try {
-    await connectDatabase();
-  } catch (err) {
-    console.error('[Startup] MongoDB connection failed — continuing without DB (some features will error)');
-    console.error((err as Error).message);
-  }
-
-  // ── Listen ────────────────────────────────────────────────
+  // ── Listen immediately so Render health checks succeed without delay ──
   server.listen(ENV.PORT, () => {
     console.log(`\n🚀 Binomo AI Analyzer backend running`);
     console.log(`   HTTP  → http://localhost:${ENV.PORT}`);
     console.log(`   WS    → ws://localhost:${ENV.PORT}/ws`);
     console.log(`   Env   → ${ENV.NODE_ENV}\n`);
+  });
+
+  // ── MongoDB (async, non-blocking) ─────────────────────────
+  connectDatabase().catch((err) => {
+    console.error('[Startup] MongoDB connection failed — continuing without DB:', (err as Error).message);
   });
 
   // ── Graceful shutdown ─────────────────────────────────────

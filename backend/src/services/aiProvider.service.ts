@@ -268,11 +268,11 @@ Indicators:
 - Market Confluence: Bulls ${bullPower}% vs Bears ${bearPower}%
 - Technical Lean: ${probableBias}
 
-RULE: Confirm CALL or PUT if setup has >= 75% high probability with acceptable trap risk. If market is in choppy consolidation or contradictory, respond WAIT.
+RULE: Confirm CALL or PUT if setup has >= 65% probability with acceptable trap risk. If market is in choppy consolidation or contradictory, respond WAIT.
 Return JSON ONLY with this schema:
 {
   "direction": "CALL" | "PUT" | "WAIT",
-  "confidence": number (between 75 and 98),
+  "confidence": number (between 65 and 98),
   "trap_risk": "LOW" | "MEDIUM" | "HIGH",
   "reason_hi": "Hindi explanation",
   "reason_en": "English explanation"

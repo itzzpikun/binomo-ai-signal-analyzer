@@ -23,6 +23,10 @@ export async function connectDatabase(): Promise<void> {
       });
       console.log('[DB] MongoDB connected:', uri);
     } catch (_err) {
+      if (ENV.NODE_ENV === 'production' || process.env.NODE_ENV === 'production') {
+        console.warn('[DB] MongoDB unreachable in production — continuing in memory mode without DB.');
+        return;
+      }
       // Fall back to in-memory MongoDB for development
       console.warn('[DB] Cannot reach MongoDB at', uri, '— starting in-memory MongoDB...');
       try {

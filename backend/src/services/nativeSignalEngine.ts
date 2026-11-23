@@ -783,23 +783,23 @@ export function analyzeCandlesNative(
     filterTriggered = true;
     filterReason = `Lower Wick Rejection near Support Level`;
     waitReasons.push(filterReason);
-  } else if (dominantScore < 75) {
+  } else if (dominantScore < 65) {
     filterTriggered = true;
-    filterReason = `Setup Score (${dominantScore}/100) is below the minimum 75-point quantitative threshold`;
+    filterReason = `Setup Score (${dominantScore}/100) is below the minimum 65-point quantitative threshold`;
     waitReasons.push(filterReason);
   }
 
   if (filterTriggered) {
     direction = 'WAIT';
-    trade_quality = filterReason || 'AWAITING 75+ SCORE CONFLUENCE';
+    trade_quality = filterReason || 'AWAITING 65+ SCORE CONFLUENCE';
   } else if (dominantScore >= 85) {
     direction = dominantBias;
     trade_quality = `STRONG_SETUP (${dominantScore} pts)`;
     matchedFrameworks.push(`100-Point Quantitative Engine: Strong ${direction} (${dominantScore}/100)`);
-  } else if (dominantScore >= 75) {
+  } else if (dominantScore >= 65) {
     direction = dominantBias;
-    trade_quality = `MODERATE_SETUP (${dominantScore} pts)`;
-    matchedFrameworks.push(`100-Point Quantitative Engine: Moderate ${direction} (${dominantScore}/100)`);
+    trade_quality = `QUALIFIED_SETUP (${dominantScore} pts)`;
+    matchedFrameworks.push(`Quantitative Engine: ${direction} (${dominantScore}/100)`);
   }
 
   // 5. Candle-Slot Locking (guarantees zero flicker during current candle)

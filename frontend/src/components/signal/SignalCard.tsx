@@ -68,8 +68,8 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
   const bearPower = probableSetup?.bearishPower || (100 - bullPower);
 
   // Quantitative Policy:
-  // Score >= 75 and no filter triggered -> CALL or PUT
-  // Below 75 or Filter Triggered -> WAIT
+  // Score >= 65 and no filter triggered -> CALL or PUT
+  // Below 65 or Filter Triggered -> WAIT
   const effectiveDirection: 'CALL' | 'PUT' | 'WAIT' =
     signal.direction === 'CALL' || signal.direction === 'PUT' ? signal.direction : 'WAIT';
 
@@ -79,13 +79,13 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
   const waitReason =
     filterInfo?.reason ||
     (signal as any).reasons?.wait_reasons?.[0] ||
-    `Setup Score (${score}/100) below the 75-point threshold`;
+    `Setup Score (${score}/100) below the 65-point threshold`;
 
   const qualityTier =
     effectiveDirection !== 'WAIT'
       ? score >= 85
         ? 'Strong Setup (85-100 pts)'
-        : 'Moderate Setup (75-84 pts)'
+        : 'Moderate Setup (65-84 pts)'
       : 'WAIT (Awaiting Qualified Setup)';
 
   const directionConfig = {
