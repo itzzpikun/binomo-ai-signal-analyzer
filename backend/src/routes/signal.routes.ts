@@ -8,10 +8,6 @@ import { analysisRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-const VALID_SYMBOLS = [
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD',
-  'BTC/USD', 'ETH/USD', 'XAU/USD', 'US30', 'NAS100', 'CRYPTO_IDX',
-];
 const VALID_INTERVALS = ['1min', '5min', '15min'];
 
 // POST /api/signal/analyze
@@ -23,9 +19,7 @@ router.post(
       .notEmpty()
       .isString()
       .trim()
-      .toUpperCase()
-      .isIn(VALID_SYMBOLS)
-      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
+      .withMessage('symbol is required'),
     body('interval')
       .notEmpty()
       .isIn(VALID_INTERVALS)
@@ -49,9 +43,7 @@ router.get(
       .optional()
       .isString()
       .trim()
-      .toUpperCase()
-      .isIn(VALID_SYMBOLS)
-      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
+      .withMessage('symbol must be a string'),
     query('limit')
       .optional()
       .isInt({ min: 1, max: 200 })
