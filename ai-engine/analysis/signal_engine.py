@@ -538,76 +538,116 @@ def generate_signal(
     else:
         pa_momentum = 0
 
-    # ── DECISION MATRIX (High Precision with Decisive Direction) ───────────────
-    # Rule: "wait rakho tabhi jab market unstable ho na ki har waqt"
-    is_market_unstable = is_dead_market or (has_strong_conflict and abs(weighted_sum) < 0.8 and abs(bull_confirmations - bear_confirmations) == 0)
+    # ── 100-POINT QUANTITATIVE SCORING ENGINE ─────────────────────────────────
+    # Trend (25 pts)
+    bull_trend = (12 if ema9 > ema21 and ema21 > ema50 else 8 if ema9 > ema21 else 0) + (8 if close > ema50 else 0) + (5 if macd_dict["macd"] > 0 else 0)
+    bear_trend = (12 if ema9 < ema21 and ema21 < ema50 else 8 if ema9 < ema21 else 0) + (8 if close < ema50 else 0) + (5 if macd_dict["macd"] < 0 else 0)
 
-    if is_market_unstable:
-        direction = "WAIT"
-        trade_quality = "UNSTABLE MARKET (CHOP)"
-        quality_label = "Market Unstable / High Risk Chop — Wait for Breakout"
-        all_bear_reasons.append("⚠️ Market is consolidating in unstable sideways chop")
-    elif (
-        (weighted_sum >= 1.0 and bull_confirmations >= 1 and trend_direction >= 0)
-        or (has_pullback_up and bull_confirmations >= 1)
-        or (has_sr_reversal_up and bull_confirmations >= 1)
-        or (bull_confirmations > bear_confirmations)
-    ):
-        direction = "CALL"
-        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bull_confirmations >= 3) else "A HIGH CONFLUENCE"
-        framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
-        quality_label = f"High-Probability Bullish ({bull_confirmations}/10 Confluences){framework_tag}"
-    elif (
-        (weighted_sum <= -1.0 and bear_confirmations >= 1 and trend_direction <= 0)
-        or (has_pullback_down and bear_confirmations >= 1)
-        or (has_sr_reversal_down and bear_confirmations >= 1)
-        or (bear_confirmations > bull_confirmations)
-    ):
-        direction = "PUT"
-        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bear_confirmations >= 3) else "A HIGH CONFLUENCE"
-        framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
-        quality_label = f"High-Probability Bearish ({bear_confirmations}/10 Confluences){framework_tag}"
-    elif trend_direction >= 0:
-        direction = "CALL"
-        trade_quality = "A HIGH CONFLUENCE"
-        quality_label = f"Bullish Trend Following ({bull_confirmations}/10 Confluences)"
-    else:
-        direction = "PUT"
-        trade_quality = "A HIGH CONFLUENCE"
-        quality_label = f"Bearish Trend Following ({bear_confirmations}/10 Confluences)"
+    # Momentum (20 pts)
+    bull_mom = (7 if 50 <= rsi_val <= 68 else 4 if 68 < rsi_val <= 75 else 0) + (6 if macd_dict["histogram"] > 0 else 0) + (7 if stoch_score > 0.4 else 0)
+    bear_mom = (7 if 32 <= rsi_val <= 50 else 4 if 25 <= rsi_val < 32 else 0) + (6 if macd_dict["histogram"] < 0 else 0) + (7 if stoch_score < -0.4 else 0)
 
-    # ── CAUTION NOTICES (Warn without forcing permanent WAIT) ─────────────────
-    if direction == "CALL" and trend_direction == -1 and not has_sr_reversal_up and not divergence_dict.get("bullish_divergence"):
-        all_bear_reasons.append("⚠️ Caution: Trading against 1-min trend — ensure candle confirmation")
-    elif direction == "PUT" and trend_direction == 1 and not has_sr_reversal_down and not divergence_dict.get("bearish_divergence"):
-        all_bull_reasons.append("⚠️ Caution: Trading against 1-min trend — ensure candle confirmation")
+    # Price Action (20 pts)
+    bull_pa = (8 if closes[-1] > closes[-2] and highs[-1] > highs[-2] else 0) + (7 if pattern_score > 0.4 else 0) + (5 if sr_pos == "at_support" else 2)
+    bear_pa = (8 if closes[-1] < closes[-2] and lows[-1] < lows[-2] else 0) + (7 if pattern_score < -0.4 else 0) + (5 if sr_pos == "at_resistance" else 2)
 
-    # ── CONSECUTIVE RUN EXHAUSTION NOTICE ────────────────────────────────────
-    if exhaustion_dict.get("exhaustion_risk"):
-        if direction == "CALL" and exhaustion_dict.get("run_direction") == "GREEN":
-            all_bear_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
-        elif direction == "PUT" and exhaustion_dict.get("run_direction") == "RED":
-            all_bull_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
+    # Strategies / Confluence (20 pts)
+    bull_strat = (10 if s1_up else 0) + (5 if s2_up else 0) + (5 if s3_up else 0)
+    bear_strat = (10 if s1_down else 0) + (5 if s2_down else 0) + (5 if s3_down else 0)
 
-    # ── MACRO TREND NOTICE (EMA 50 / EMA 200) ────────────────────────────────
-    macro_dir = macro_trend_dict.get("trend", "NEUTRAL")
-    if macro_dir == "STRONG_BEARISH" and direction == "CALL" and not divergence_dict.get("bullish_divergence"):
-        all_bear_reasons.append("⚠️ Macro Downtrend Note: Price < EMA 50 < EMA 200")
-    elif macro_dir == "STRONG_BULLISH" and direction == "PUT" and not divergence_dict.get("bearish_divergence"):
-        all_bull_reasons.append("⚠️ Macro Uptrend Note: Price > EMA 50 > EMA 200")
+    # Volatility / Market Quality (15 pts)
+    adx_val = adx_dict.get("adx", 20)
+    bb_width_pct = bb["width"] / max(bb["middle"], 1e-6)
+    vol_score = (8 if adx_val >= 22 else 4 if adx_val >= 18 else 0) + (4 if 0.0015 <= bb_width_pct <= 0.015 else 2) + (3 if not is_dead_market else 0)
 
-    # ── Confidence Score Calculation ──────────────────────────────────────────
+    bull_total = min(100, bull_trend + bull_mom + bull_pa + bull_strat + vol_score)
+    bear_total = min(100, bear_trend + bear_mom + bear_pa + bear_strat + vol_score)
+
+    dominant_bias = "CALL" if bull_total >= bear_total else "PUT"
+    dominant_score = bull_total if dominant_bias == "CALL" else bear_total
+
+    # ── ANTI-LOSS FILTERS (Strict Veto to WAIT) ───────────────────────────────
+    filter_triggered = False
+    filter_reason = None
+
+    last_body = abs(closes[-1] - candles[-1].get("open", closes[-1]))
+    last_upper_wick = highs[-1] - max(closes[-1], candles[-1].get("open", closes[-1]))
+    last_lower_wick = min(closes[-1], candles[-1].get("open", closes[-1])) - lows[-1]
+
+    # Filter 1: Dead Market / Sideways Chop / Balanced Contradiction
+    if is_dead_market:
+        filter_triggered = True
+        filter_reason = "Low Volatility Dead Market (ATR too low) — Risk High"
+        all_bear_reasons.append(filter_reason)
+    elif adx_val < 22:
+        filter_triggered = True
+        filter_reason = f"Sideways Market Chop Detected (ADX: {adx_val:.1f} < 22) — False Signal Risk High"
+        all_bear_reasons.append("⚠️ Sideways consolidation chop: ADX < 22")
+    elif has_strong_conflict and abs(bull_confirmations - bear_confirmations) <= 1:
+        filter_triggered = True
+        filter_reason = f"Contradictory Market Signals Detected ({bull_confirmations} Bulls vs {bear_confirmations} Bears) — WAIT"
+        all_bear_reasons.append(filter_reason)
+
+    # Filter 2: Anti-Trend Veto (Never trade counter to prevailing EMA trend)
+    elif dominant_bias == "CALL" and (ema9 < ema21 and close < ema50) and not divergence_dict.get("bullish_divergence"):
+        filter_triggered = True
+        filter_reason = "Anti-Trend Filter: Cannot CALL in strong downtrend (EMA 9 < 21 & Price < EMA 50)"
+        all_bear_reasons.append(filter_reason)
+
+    elif dominant_bias == "PUT" and (ema9 > ema21 and close > ema50) and not divergence_dict.get("bearish_divergence"):
+        filter_triggered = True
+        filter_reason = "Anti-Trend Filter: Cannot PUT in strong uptrend (EMA 9 > 21 & Price > EMA 50)"
+        all_bull_reasons.append(filter_reason)
+
+    # Filter 3: Consecutive Candle Run Exhaustion
+    elif exhaustion_dict.get("exhaustion_risk") and dominant_bias == "CALL" and exhaustion_dict.get("run_direction") == "GREEN":
+        filter_triggered = True
+        filter_reason = f"Candle Exhaustion: {exhaustion_dict.get('run_count', 4)}+ consecutive green candles. Retracement risk high. WAIT."
+        all_bear_reasons.append(filter_reason)
+
+    elif exhaustion_dict.get("exhaustion_risk") and dominant_bias == "PUT" and exhaustion_dict.get("run_direction") == "RED":
+        filter_triggered = True
+        filter_reason = f"Candle Exhaustion: {exhaustion_dict.get('run_count', 4)}+ consecutive red candles. Bounce risk high. WAIT."
+        all_bull_reasons.append(filter_reason)
+
+    # Filter 4: S/R Wick Rejection
+    elif dominant_bias == "CALL" and sr_pos == "at_resistance" and last_upper_wick > 1.8 * max(last_body, 1e-6):
+        filter_triggered = True
+        filter_reason = "Upper Wick Rejection near Resistance Level — High Rejection Risk"
+        all_bear_reasons.append(filter_reason)
+
+    elif dominant_bias == "PUT" and sr_pos == "at_support" and last_lower_wick > 1.8 * max(last_body, 1e-6):
+        filter_triggered = True
+        filter_reason = "Lower Wick Rejection near Support Level — High Rejection Risk"
+        all_bull_reasons.append(filter_reason)
+
+    # Filter 5: Strict 70%+ Quantitative Threshold & Min 3 Confirmations
+    elif dominant_score < 70 or (dominant_bias == "CALL" and bull_confirmations < 3) or (dominant_bias == "PUT" and bear_confirmations < 3):
+        filter_triggered = True
+        filter_reason = f"Setup Score ({dominant_score}/100) is below the minimum 70-point quantitative threshold"
+        if dominant_bias == "CALL":
+            all_bear_reasons.append(filter_reason)
+        else:
+            all_bull_reasons.append(filter_reason)
+
+    # ── DECISION OUTCOME ───────────────────────────────────────────────────────
     confluence_count = max(bull_confirmations, bear_confirmations)
-    base_confidence = (confluence_count / 10.0) * 100.0
 
-    if direction == "WAIT":
-        confidence = round(min(base_confidence, 42.0), 1)
-    elif trade_quality == "A+ PREMIUM SETUP":
-        confidence = round(min(max(base_confidence, 82.0), 94.0), 1)
-    elif trade_quality == "A HIGH CONFLUENCE":
-        confidence = round(min(max(base_confidence, 70.0), 81.0), 1)
+    if filter_triggered:
+        direction = "WAIT"
+        trade_quality = filter_reason or "AWAITING 70+ SCORE CONFLUENCE"
+        quality_label = f"Trade Paused: {trade_quality}"
+        confidence = round(min(float(dominant_score), 65.0), 1)
     else:
-        confidence = round(min(max(base_confidence, 60.0), 69.0), 1)
+        direction = dominant_bias
+        confidence = round(min(max(float(dominant_score), 70.0), 96.0), 1)
+        if dominant_score >= 85 and len(matched_frameworks) > 0:
+            trade_quality = "A+ PREMIUM SETUP"
+            framework_tag = f" [{matched_frameworks[0]}]"
+            quality_label = f"High-Probability {direction} ({dominant_score}/100 Score, {confluence_count}/10 Confluences){framework_tag}"
+        else:
+            trade_quality = f"QUALIFIED SETUP ({dominant_score} pts)"
+            quality_label = f"Confirmed {direction} ({dominant_score}/100 Score, {confluence_count}/10 Confluences)"
 
     # ── Gemini AI Arbiter Cross-Verification ──────────────────────────────────
     indicators_snapshot = {
@@ -660,17 +700,30 @@ def generate_signal(
         if trap_risk == "HIGH" and direction != "WAIT":
             direction = "WAIT"
             trade_quality = f"{provider_name.upper()} TRAP VETO"
+            confidence = 65.0
+            quality_label = f"Trade Paused: {trade_quality}"
             all_bear_reasons.append(f"🤖 {provider_name} Trap Veto: {gemini_result.get('analysis_en')}")
         elif direction != "WAIT" and gemini_dir != "WAIT" and gemini_dir != direction:
             direction = "WAIT"
             trade_quality = f"{provider_name.upper()} CONFLICT VETO"
+            confidence = 50.0
+            quality_label = f"Trade Paused: {trade_quality}"
             all_bear_reasons.append(
                 f"🤖 {provider_name} Conflict Veto: Algorithmic signal was {direction} but AI detected opposing momentum ({gemini_dir})."
             )
         elif direction != "WAIT" and gemini_dir == direction:
-            confidence = round((confidence * 0.5) + (gemini_conf * 0.5), 1)
+            confidence = round(max(confidence, (confidence * 0.5) + (gemini_conf * 0.5)), 1)
             trade_quality = f"AI CONFIRMED ({trade_quality})"
             all_bull_reasons.append(f"🤖 {provider_name}: {gemini_result.get('analysis_en')}")
+
+    # Enforce strict 70%+ cutoff on final confidence
+    if direction == "WAIT" and confidence >= 70:
+        confidence = 65.0
+    elif direction != "WAIT" and confidence < 70:
+        direction = "WAIT"
+        trade_quality = f"AWAITING 70+ SCORE CONFLUENCE ({confidence}/100)"
+        quality_label = f"Trade Paused: {trade_quality}"
+        confidence = 65.0
 
     # ── Exact Entry Timing & Horizon Information ──────────────────────────────
     entry_timing_info = {

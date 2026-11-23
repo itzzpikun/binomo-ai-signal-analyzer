@@ -41,9 +41,9 @@ const Backtesting: React.FC = () => {
   const payoutRate = dataResponse?.payoutRate || '83%';
 
   const accuracyColor = result
-    ? result.accuracy >= 65
+    ? result.accuracy >= 70
       ? 'text-emerald-400'
-      : result.accuracy >= 55
+      : result.accuracy >= 60
       ? 'text-yellow-400'
       : 'text-red-400'
     : 'text-white';

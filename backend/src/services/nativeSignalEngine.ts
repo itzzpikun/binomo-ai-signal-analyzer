@@ -573,7 +573,7 @@ export function analyzeCandlesNative(
   // 2. Market Regime & False Signal Detection
   const bbWidthPct = bbData.width / Math.max(bbData.middle, 1);
   let marketRegime: MarketRegime = 'TRENDING';
-  if (adxData.adx < 20 || bbWidthPct < 0.002) {
+  if (adxData.adx < 22 || bbWidthPct < 0.002) {
     marketRegime = 'RANGING';
   } else if (atrData.current > atrData.average * 2.2) {
     marketRegime = 'VOLATILE';
@@ -755,7 +755,24 @@ export function analyzeCandlesNative(
     });
   }
 
-  // False Signal Check Execution
+  // Consecutive Candle Run Exhaustion Detection (4+ same color candles)
+  let consecutiveSame = 0;
+  let runColor: 'GREEN' | 'RED' | null = null;
+  for (let i = candles.length - 1; i >= Math.max(0, candles.length - 6); i--) {
+    const c = candles[i];
+    const color = c.close > c.open ? 'GREEN' : c.close < c.open ? 'RED' : null;
+    if (!color) break;
+    if (!runColor) {
+      runColor = color;
+      consecutiveSame = 1;
+    } else if (runColor === color) {
+      consecutiveSame++;
+    } else {
+      break;
+    }
+  }
+
+  // False Signal Check Execution (High Accuracy Anti-Loss Filter)
   let filterTriggered = false;
   let filterReason: string | null = null;
 
@@ -765,7 +782,7 @@ export function analyzeCandlesNative(
     waitReasons.push(filterReason);
   } else if (isSideways) {
     filterTriggered = true;
-    filterReason = `Sideways Market Chop Detected (ADX: ${adxData.adx} < 20)`;
+    filterReason = `Sideways Market Chop Detected (ADX: ${adxData.adx} < 22) — False Signal Risk High`;
     waitReasons.push(filterReason);
   } else if (isAbnormalVolatility) {
     filterTriggered = true;
@@ -783,23 +800,44 @@ export function analyzeCandlesNative(
     filterTriggered = true;
     filterReason = `Lower Wick Rejection near Support Level`;
     waitReasons.push(filterReason);
-  } else if (dominantScore < 65) {
+  } else if (dominantBias === 'CALL' && ema9 < ema21 && currentPrice < ema50) {
     filterTriggered = true;
-    filterReason = `Setup Score (${dominantScore}/100) is below the minimum 65-point quantitative threshold`;
+    filterReason = `Anti-Trend Filter: Cannot CALL in strong downtrend (EMA 9 < 21 & Price < EMA 50)`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'PUT' && ema9 > ema21 && currentPrice > ema50) {
+    filterTriggered = true;
+    filterReason = `Anti-Trend Filter: Cannot PUT in strong uptrend (EMA 9 > 21 & Price > EMA 50)`;
+    waitReasons.push(filterReason);
+  } else if (consecutiveSame >= 4 && runColor === 'GREEN' && dominantBias === 'CALL') {
+    filterTriggered = true;
+    filterReason = `Candle Exhaustion: ${consecutiveSame} consecutive green candles. Retracement risk high. WAIT.`;
+    waitReasons.push(filterReason);
+  } else if (consecutiveSame >= 4 && runColor === 'RED' && dominantBias === 'PUT') {
+    filterTriggered = true;
+    filterReason = `Candle Exhaustion: ${consecutiveSame} consecutive red candles. Bounce risk high. WAIT.`;
+    waitReasons.push(filterReason);
+  } else if (dominantScore < 70) {
+    filterTriggered = true;
+    filterReason = `Setup Score (${dominantScore}/100) is below the minimum 70-point quantitative threshold`;
     waitReasons.push(filterReason);
   }
 
   if (filterTriggered) {
     direction = 'WAIT';
-    trade_quality = filterReason || 'AWAITING 65+ SCORE CONFLUENCE';
+    trade_quality = filterReason || 'AWAITING 70+ SCORE CONFLUENCE';
   } else if (dominantScore >= 85) {
     direction = dominantBias;
     trade_quality = `STRONG_SETUP (${dominantScore} pts)`;
     matchedFrameworks.push(`100-Point Quantitative Engine: Strong ${direction} (${dominantScore}/100)`);
-  } else if (dominantScore >= 65) {
+  } else if (dominantScore >= 70) {
     direction = dominantBias;
     trade_quality = `QUALIFIED_SETUP (${dominantScore} pts)`;
     matchedFrameworks.push(`Quantitative Engine: ${direction} (${dominantScore}/100)`);
+  }
+
+  // Cap score in breakdown when in WAIT so it never leaks >= 70
+  if (direction === 'WAIT' && scoreBreakdown.totalScore >= 70) {
+    scoreBreakdown.totalScore = 68;
   }
 
   // 5. Candle-Slot Locking (guarantees zero flicker during current candle)
@@ -809,8 +847,10 @@ export function analyzeCandlesNative(
   const latchKey = `${symbol.toUpperCase()}_${interval}`;
   const currentLatch = signalLatchMap.get(latchKey);
 
+  const effectiveConfidence = direction === 'WAIT' ? Math.min(dominantScore, 68) : dominantScore;
+
   if (!filterTriggered && currentLatch && currentLatch.candleSlot === candleSlot) {
-    if (currentLatch.direction === 'CALL' || currentLatch.direction === 'PUT') {
+    if ((currentLatch.direction === 'CALL' || currentLatch.direction === 'PUT') && currentLatch.confidence >= 70) {
       direction = currentLatch.direction;
       trade_quality = currentLatch.trade_quality;
     }
@@ -818,7 +858,7 @@ export function analyzeCandlesNative(
     signalLatchMap.set(latchKey, {
       candleSlot,
       direction,
-      confidence: dominantScore,
+      confidence: effectiveConfidence,
       trade_quality,
       score_breakdown: scoreBreakdown,
       reasons: { bullish: bullReasons, bearish: bearReasons, wait_reasons: waitReasons },
@@ -845,7 +885,7 @@ export function analyzeCandlesNative(
 
   return {
     direction,
-    confidence: dominantScore,
+    confidence: effectiveConfidence,
     trade_quality,
     score_breakdown: scoreBreakdown,
     market_regime: marketRegime,
@@ -864,11 +904,11 @@ export function analyzeCandlesNative(
       entry_window: 'New Candle Open (0-15s)',
       expiry_duration: `${interval} (Fixed)`,
       confluence_count: dominantScore,
-      quality_tier: dominantScore >= 85 ? 'Strong Setup (85-100 pts)' : dominantScore >= 75 ? 'Moderate Setup (75-84 pts)' : 'Awaiting Threshold (<75 pts)',
+      quality_tier: direction !== 'WAIT' ? (dominantScore >= 85 ? 'Strong Setup (85-100 pts)' : 'Moderate Setup (70-84 pts)') : 'Awaiting 70+ Score Confluence',
       quality_label: `${direction} Setup Score: ${dominantScore}/100 (${marketRegime})`,
       matched_frameworks: matchedFrameworks,
     },
-    confluence_score: dominantScore,
+    confluence_score: effectiveConfidence,
     next_probable_setup: nextProbableSetup,
     indicators: {
       rsi: { value: Math.round(rsi * 10) / 10, signal: rsi >= 60 ? 'Bullish' : rsi <= 40 ? 'Bearish' : 'Neutral' },

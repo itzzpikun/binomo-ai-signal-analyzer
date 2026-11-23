@@ -268,11 +268,11 @@ Indicators:
 - Market Confluence: Bulls ${bullPower}% vs Bears ${bearPower}%
 - Technical Lean: ${probableBias}
 
-RULE: Confirm CALL or PUT if setup has >= 65% probability with acceptable trap risk. If market is in choppy consolidation or contradictory, respond WAIT.
+RULE: Confirm CALL or PUT ONLY if setup has strictly >= 70% probability with acceptable trap risk. If market is in choppy consolidation, contradictory, or confidence < 70%, respond WAIT.
 Return JSON ONLY with this schema:
 {
   "direction": "CALL" | "PUT" | "WAIT",
-  "confidence": number (between 65 and 98),
+  "confidence": number (between 70 and 98 for CALL/PUT, or < 70 for WAIT),
   "trap_risk": "LOW" | "MEDIUM" | "HIGH",
   "reason_hi": "Hindi explanation",
   "reason_en": "English explanation"
@@ -295,17 +295,23 @@ Return JSON ONLY with this schema:
           },
         };
       }
+      let finalDir = (aiDir as any) || techDir;
+      let finalConf = conf;
+      if (finalDir !== 'WAIT' && finalConf < 70) {
+        finalDir = 'WAIT';
+        finalConf = Math.min(finalConf, 65);
+      }
       return {
         provider: providerName,
-        direction: (aiDir as any) || techDir,
-        confidence: conf,
+        direction: finalDir,
+        confidence: finalConf,
         trap_risk: trapRisk,
-        analysis_en: reasonEn || `${providerName} verified ${aiDir} with ${conf}% confidence.`,
-        analysis_hi: reasonHi || `${providerName} ne ${aiDir} setup ko ${conf}% accuracy ke sath confirm kiya hai.`,
-        verdict: `${providerName} Approved: ${aiDir}`,
+        analysis_en: reasonEn || `${providerName} evaluated market: ${finalDir} with ${finalConf}% confidence.`,
+        analysis_hi: reasonHi || `${providerName} ne ${finalDir} setup ko ${finalConf}% accuracy ke sath evaluate kiya hai.`,
+        verdict: `${providerName} Verdict: ${finalDir}`,
         models: {
           technical: { status: 'active', direction: techDir, score: technicalScore },
-          [providerName.toLowerCase().replace(/[^a-z]/g, '')]: { status: 'active', direction: aiDir },
+          [providerName.toLowerCase().replace(/[^a-z]/g, '')]: { status: 'active', direction: finalDir },
         },
       };
     };

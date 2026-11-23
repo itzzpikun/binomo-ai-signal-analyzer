@@ -162,6 +162,11 @@ Respond in STRICT JSON with keys:
         trap_risk = str(parsed.get("trap_risk", "LOW"))
         math_dir = math_signal.get("direction", "WAIT")
 
+        # Threshold check: AI must have >= 70% confidence for CALL or PUT
+        if ai_dir != "WAIT" and conf < 70:
+            ai_dir = "WAIT"
+            conf = min(conf, 65)
+
         # Contradiction check: Algorithmic CALL vs AI PUT (or vice-versa) -> Veto to WAIT!
         if math_dir != "WAIT" and ai_dir != "WAIT" and ai_dir != math_dir:
             return {

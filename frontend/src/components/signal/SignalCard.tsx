@@ -67,11 +67,13 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
   const bullPower = probableSetup?.bullishPower || (probableBias === 'CALL' ? 62 : 38);
   const bearPower = probableSetup?.bearishPower || (100 - bullPower);
 
-  // Quantitative Policy:
-  // Score >= 65 and no filter triggered -> CALL or PUT
-  // Below 65 or Filter Triggered -> WAIT
+  // Strict Quantitative Policy:
+  // Score >= 70 and no filter triggered -> CALL or PUT
+  // Below 70 or Filter Triggered -> WAIT
   const effectiveDirection: 'CALL' | 'PUT' | 'WAIT' =
-    signal.direction === 'CALL' || signal.direction === 'PUT' ? signal.direction : 'WAIT';
+    (signal.direction === 'CALL' || signal.direction === 'PUT') && score >= 70
+      ? signal.direction
+      : 'WAIT';
 
   const isWait = effectiveDirection === 'WAIT';
   const regime = (signal as any).market_regime || 'TRENDING';
@@ -79,14 +81,14 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
   const waitReason =
     filterInfo?.reason ||
     (signal as any).reasons?.wait_reasons?.[0] ||
-    `Setup Score (${score}/100) below the 65-point threshold`;
+    `Setup Score (${score}/100) below the 70-point threshold`;
 
   const qualityTier =
     effectiveDirection !== 'WAIT'
       ? score >= 85
         ? 'Strong Setup (85-100 pts)'
-        : 'Moderate Setup (65-84 pts)'
-      : 'WAIT (Awaiting Qualified Setup)';
+        : 'Moderate Setup (70-84 pts)'
+      : 'WAIT (Awaiting 70+ Score Confluence)';
 
   const directionConfig = {
     CALL: {

@@ -48,7 +48,10 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
   const isEntryWindowOpen = elapsedInCandle <= 15;
   const isGetReady = !isEntryWindowOpen && secondsRemaining <= 12;
 
-  const direction = currentSignal?.direction || 'WAIT';
+  const direction =
+    (currentSignal?.direction === 'CALL' || currentSignal?.direction === 'PUT') && (currentSignal?.confidence || 0) >= 70
+      ? currentSignal.direction
+      : 'WAIT';
   const confidence = currentSignal?.confidence || 0;
   const isCall = direction === 'CALL';
   const isPut = direction === 'PUT';

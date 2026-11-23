@@ -46,18 +46,16 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
     const confirmedCandidates: TripleConfirmedAlert[] = [];
 
     const effCurrentDir: ('CALL' | 'PUT' | null) =
-      (currentSignal?.direction === 'CALL' || currentSignal?.direction === 'PUT')
+      (currentSignal?.direction === 'CALL' || currentSignal?.direction === 'PUT') && currentSignal.confidence >= 70
         ? currentSignal.direction
-        : (currentSignal?.next_probable_setup?.bias === 'CALL' || currentSignal?.next_probable_setup?.bias === 'PUT'
-          ? (currentSignal.next_probable_setup.bias as 'CALL' | 'PUT')
-          : null);
+        : null;
 
-    // User Rule: "after 65% model confidence show signal put or call otherwise wait"
-    // 1. Current viewed asset (check if accuracy >= 65%)
+    // Strict User Rule: "after 70% model confidence show signal put or call otherwise wait"
+    // 1. Current viewed asset (check if accuracy >= 70%)
     if (
       currentSignal &&
       effCurrentDir &&
-      currentSignal.confidence >= 65
+      currentSignal.confidence >= 70
     ) {
       const ageMs = now - new Date(currentSignal.timestamp).getTime();
       if (ageMs < 30_000) {
@@ -71,11 +69,11 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
       }
     }
 
-    // 2. Scanned multi-assets (accuracy >= 65%)
+    // 2. Scanned multi-assets (accuracy >= 70%)
     for (const sig of multiSignals) {
       if (
         (sig.direction === 'CALL' || sig.direction === 'PUT') &&
-        sig.confidence >= 65
+        sig.confidence >= 70
       ) {
         const ageMs = now - new Date(sig.timestamp).getTime();
         if (ageMs < 30_000) {

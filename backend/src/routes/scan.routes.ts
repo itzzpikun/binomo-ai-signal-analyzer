@@ -36,8 +36,8 @@ router.get('/all', analysisRateLimiter, async (_req: Request, res: Response) => 
           s15mDirection: sig15m.direction,
         });
 
-        // Strict Policy: Only assets that qualify for CALL or PUT (score >= 65 and no filter triggered)
-        if (sig1m.direction !== 'CALL' && sig1m.direction !== 'PUT') {
+        // Strict Policy: Only assets that qualify for CALL or PUT (score >= 70 and no filter triggered)
+        if ((sig1m.direction !== 'CALL' && sig1m.direction !== 'PUT') || sig1m.confidence < 70) {
           return null;
         }
 
@@ -72,7 +72,7 @@ router.get('/all', analysisRateLimiter, async (_req: Request, res: Response) => 
 
     res.json({
       status: 'OK',
-      filter: 'ACCURACY_FILTER_65_PLUS',
+      filter: 'ACCURACY_FILTER_70_PLUS',
       scanned: symbolList.length,
       active_signals: confirmedSignals.length,
       signals: confirmedSignals,

@@ -183,8 +183,12 @@ def _enrich_signal(sig: Dict[str, Any], symbol: str, interval: str) -> Dict[str,
     vol_score = int(round(base_factor * 15))
 
     total_score = trend_score + mom_score + pa_score + mtf_score + vol_score
-    if direction == "WAIT" and total_score >= 65:
-        total_score = 60
+    if direction == "WAIT" and total_score >= 70:
+        total_score = 65
+    elif direction != "WAIT" and total_score < 70:
+        direction = "WAIT"
+        sig["direction"] = "WAIT"
+        sig["trade_quality"] = f"AWAITING 70+ SCORE CONFLUENCE ({total_score}/100)"
 
     score_breakdown = {
         "trendScore": trend_score,
@@ -198,7 +202,7 @@ def _enrich_signal(sig: Dict[str, Any], symbol: str, interval: str) -> Dict[str,
     # Market Regime Detection
     adx_dict = sig.get("indicators", {}).get("adx", {})
     adx_val = adx_dict.get("adx", 22) if isinstance(adx_dict, dict) else 22
-    if adx_val < 20:
+    if adx_val < 22:
         regime = "RANGING"
     else:
         regime = "TRENDING"
@@ -298,7 +302,7 @@ def signal_history():
 # ── Scan All Route ────────────────────────────────────────────────────────────
 @app.get("/api/scan/all")
 def scan_all():
-    """Scan all 26 assets and return signals with setup score >= 65."""
+    """Scan all 26 assets and return signals with setup score >= 70."""
     qualified = []
     scanned_count = 0
 
@@ -309,12 +313,12 @@ def scan_all():
         sig = generate_signal(candles)
         enriched = _enrich_signal(sig, sym, "1min")
 
-        if enriched["direction"] != "WAIT" and enriched["confidence"] >= 65:
+        if enriched["direction"] != "WAIT" and enriched["confidence"] >= 70:
             qualified.append(enriched)
 
     return jsonify({
         "status": "OK",
-        "filter": "ACCURACY_FILTER_65_PLUS",
+        "filter": "ACCURACY_FILTER_70_PLUS",
         "scanned": scanned_count,
         "active_signals": len(qualified),
         "signals": qualified,
