@@ -19,6 +19,7 @@ import { WebSocketService } from './services/websocket.service';
 
 import marketRoutes from './routes/market.routes';
 import signalRoutes from './routes/signal.routes';
+import scanRoutes from './routes/scan.routes';
 import backtestRoutes from './routes/backtest.routes';
 import performanceRoutes from './routes/performance.routes';
 
@@ -120,6 +121,7 @@ async function bootstrap(): Promise<void> {
   // ── API Routes ────────────────────────────────────────────
   app.use('/api/market', marketRoutes);
   app.use('/api/signal', signalRoutes);
+  app.use('/api/scan', scanRoutes);
   app.use('/api/backtest', backtestRoutes);
   app.use('/api/performance', performanceRoutes);
 

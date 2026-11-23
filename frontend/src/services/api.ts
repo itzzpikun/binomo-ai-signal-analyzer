@@ -179,6 +179,39 @@ export const verifySignal = async (
 };
 
 // ----------------------------------------------------------------
+// Multi-Asset Background Scanner
+// ----------------------------------------------------------------
+
+export interface MultiAssetSignal {
+  symbol: string;
+  direction: 'CALL' | 'PUT';
+  confidence: number;
+  trade_quality: string;
+  entry_timing: any;
+  next_probable_setup?: any;
+  reasons?: {
+    bullish: string[];
+    bearish: string[];
+  };
+  timestamp: string;
+}
+
+export interface MultiAssetScanResponse {
+  status: string;
+  scanned: number;
+  active_signals: number;
+  signals: MultiAssetSignal[];
+  timestamp: string;
+}
+
+export const scanAllAssets = async (interval = '1min'): Promise<MultiAssetScanResponse> => {
+  const response = await apiClient.get('/api/scan/all', {
+    params: { interval },
+  });
+  return response.data;
+};
+
+// ----------------------------------------------------------------
 // Backtesting
 // ----------------------------------------------------------------
 
@@ -212,6 +245,7 @@ export const api = {
     getSignalHistory(symbol, limit).then(r => r.signals ?? r),
   verifySignal: (signalId: string, outcome: 'WIN' | 'LOSS') =>
     verifySignal(signalId, outcome),
+  scanAllAssets: (interval = '1min') => scanAllAssets(interval),
   runBacktest: (params: BacktestParams) => runBacktest(params),
   getPerformance: () => getPerformance(),
 };

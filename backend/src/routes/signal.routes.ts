@@ -25,12 +25,8 @@ router.post(
       .isIn(VALID_INTERVALS)
       .withMessage('interval must be 1min, 5min, or 15min'),
     body('candles')
-      .isArray({ min: 5 })
-      .withMessage('candles must be an array with at least 5 entries'),
-    body('candles.*.open').isFloat({ min: 0 }).withMessage('open must be a positive number'),
-    body('candles.*.high').isFloat({ min: 0 }).withMessage('high must be a positive number'),
-    body('candles.*.low').isFloat({ min: 0 }).withMessage('low must be a positive number'),
-    body('candles.*.close').isFloat({ min: 0 }).withMessage('close must be a positive number'),
+      .isArray({ min: 1 })
+      .withMessage('candles must be an array with at least 1 entry'),
   ],
   signalController.analyze.bind(signalController)
 );

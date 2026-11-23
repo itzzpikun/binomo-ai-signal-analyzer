@@ -547,21 +547,21 @@ def generate_signal(
         quality_label = "Indicator Conflict — Wait for Breakout"
         all_bear_reasons.append("⚠️ Conflicting signals: Trend vs Oscillator divergence")
     elif (
-        (weighted_sum >= 2.5 and bull_confirmations >= 3 and trend_direction >= 0)
-        or (has_pullback_up and bull_confirmations >= 3)
-        or (has_sr_reversal_up and bull_confirmations >= 3)
+        (weighted_sum >= 2.0 and bull_confirmations >= 2 and trend_direction >= 0)
+        or (has_pullback_up and bull_confirmations >= 2)
+        or (has_sr_reversal_up and bull_confirmations >= 2)
     ):
         direction = "CALL"
-        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bull_confirmations >= 4) else "A HIGH CONFLUENCE"
+        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bull_confirmations >= 3) else "A HIGH CONFLUENCE"
         framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
         quality_label = f"High-Probability Bullish ({bull_confirmations}/10 Confluences){framework_tag}"
     elif (
-        (weighted_sum <= -2.5 and bear_confirmations >= 3 and trend_direction <= 0)
-        or (has_pullback_down and bear_confirmations >= 3)
-        or (has_sr_reversal_down and bear_confirmations >= 3)
+        (weighted_sum <= -2.0 and bear_confirmations >= 2 and trend_direction <= 0)
+        or (has_pullback_down and bear_confirmations >= 2)
+        or (has_sr_reversal_down and bear_confirmations >= 2)
     ):
         direction = "PUT"
-        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bear_confirmations >= 4) else "A HIGH CONFLUENCE"
+        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bear_confirmations >= 3) else "A HIGH CONFLUENCE"
         framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
         quality_label = f"High-Probability Bearish ({bear_confirmations}/10 Confluences){framework_tag}"
     else:

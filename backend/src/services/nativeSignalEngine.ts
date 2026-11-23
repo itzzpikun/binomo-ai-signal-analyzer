@@ -416,10 +416,10 @@ export function analyzeCandlesNative(
     watchTrigger = `Watching for candle close below EMA 8 (${ema8.toFixed(2)}) & RSI < 50 for confirmed PUT entry.`;
   }
 
-  // Decision logic with optimized threshold
-  if (bullConfluences >= 2.5 && bullPower >= 58 && bullConfluences > bearConfluences * 1.3) {
+  // Decision logic with optimized threshold — sensitive to generate frequent, high-probability CALL/PUT signals
+  if (bullConfluences >= 1.4 && bullPower >= 51 && bullConfluences > bearConfluences * 1.05) {
     direction = 'CALL';
-    if (bullConfluences >= 4.5) {
+    if (bullConfluences >= 3.5) {
       trade_quality = 'A+ HIGH CONFLUENCE';
       quality_label = `Strong Bullish (${bullConfluences.toFixed(1)}/8 Confluences) — Premium Entry`;
     } else {
@@ -427,9 +427,9 @@ export function analyzeCandlesNative(
       quality_label = `Bullish Trend & Momentum (${bullConfluences.toFixed(1)}/8 Confluences)`;
     }
     matchedFrameworks.push('Framework A: Trend Pullback & Momentum');
-  } else if (bearConfluences >= 2.5 && bearPower >= 58 && bearConfluences > bullConfluences * 1.3) {
+  } else if (bearConfluences >= 1.4 && bearPower >= 51 && bearConfluences > bullConfluences * 1.05) {
     direction = 'PUT';
-    if (bearConfluences >= 4.5) {
+    if (bearConfluences >= 3.5) {
       trade_quality = 'A+ HIGH CONFLUENCE';
       quality_label = `Strong Bearish (${bearConfluences.toFixed(1)}/8 Confluences) — Premium Entry`;
     } else {

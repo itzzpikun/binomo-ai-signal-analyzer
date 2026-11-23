@@ -233,6 +233,10 @@ export const marketDataService = {
     return SUPPORTED_ASSETS;
   },
 
+  getAssetsList(): BinomoAssetSpec[] {
+    return BINOMO_ASSETS_LIST;
+  },
+
   validateInterval(interval: string): void {
     if (!VALID_INTERVALS.includes(interval)) {
       throw Object.assign(
