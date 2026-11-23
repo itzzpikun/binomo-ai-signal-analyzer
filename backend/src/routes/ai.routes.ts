@@ -21,6 +21,7 @@ router.post('/test-key', async (req: Request, res: Response) => {
       'groq',
       'deepseek',
       'openrouter',
+      'cloudflare',
       'builtin',
     ];
     if (!validProviders.includes(provider)) {

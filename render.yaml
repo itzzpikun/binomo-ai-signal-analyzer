@@ -9,6 +9,14 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: CLOUDFLARE_API_KEY
+        sync: false
 
   # 2. Backend Express API
   - type: web
@@ -21,12 +29,16 @@ services:
       - key: PORT
         value: 5001
       - key: TWELVE_DATA_API_KEY
-        value: a42fdb0c8c084cde87f9e84a87f4d88f
+        value: 2722ed98484d448f912b7019c92676ae
         sync: false
       - key: GEMINI_API_KEY
-        value: AIzaSyBjtP-wRmv06a2ifP3ourXe9FnElt6Pw5k
-      - key: OPENAI_API_KEY
-        value: key_49MGUQXsHZ55qVKE
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: CLOUDFLARE_API_KEY
+        sync: false
       - key: AI_ENGINE_URL
         fromService:
           type: web

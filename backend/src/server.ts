@@ -135,6 +135,9 @@ async function bootstrap(): Promise<void> {
       if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path.startsWith('/health')) {
         return next();
       }
+      if (req.path.match(/\.(js|css|svg|png|ico|map|json|woff2?|ttf)$/i)) {
+        return res.status(404).send('Asset not found');
+      }
       res.sendFile(path.join(frontendDist, 'index.html'));
     });
   } else {

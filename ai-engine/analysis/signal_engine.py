@@ -369,6 +369,9 @@ def generate_signal(
     candles: list[dict],
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
+    openrouter_api_key: Optional[str] = None,
+    cloudflare_api_key: Optional[str] = None,
 ) -> dict:
     """
     Main signal generation function with Binomo Strategy Guide Confluence Matrix.
@@ -635,16 +638,23 @@ def generate_signal(
         math_signal=initial_math_signal,
         gemini_key=gemini_api_key,
         openai_key=openai_api_key,
+        groq_key=groq_api_key,
+        openrouter_key=openrouter_api_key,
+        cloudflare_key=cloudflare_api_key,
     )
 
     if gemini_result.get("status") == "active":
         gemini_dir = gemini_result.get("direction")
         gemini_conf = gemini_result.get("confidence", confidence)
         trap_risk = gemini_result.get("trap_risk", "LOW")
+        prov = gemini_result.get("provider", "ai")
         provider_name = (
-            "Gemini AI"
-            if gemini_result.get("provider") == "gemini"
-            else ("ChatGPT" if gemini_result.get("provider") == "openai" else "AI Arbiter")
+            "Groq AI" if prov == "groq"
+            else "Gemini AI" if prov == "gemini"
+            else "OpenRouter" if prov == "openrouter"
+            else "ChatGPT" if prov == "openai"
+            else "Cloudflare AI" if prov == "cloudflare"
+            else "AI Arbiter"
         )
 
         if trap_risk == "HIGH" and direction != "WAIT":

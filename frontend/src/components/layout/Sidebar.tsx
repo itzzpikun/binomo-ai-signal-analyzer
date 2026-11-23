@@ -75,10 +75,8 @@ const navItems: NavItem[] = [
 ];
 
 const Sidebar: React.FC = () => {
-  const setShowLoginModal = useAppStore((s) => s.setShowLoginModal);
-  const binomoBalance = useAppStore((s) => s.binomoBalance);
-  const binomoCurrency = useAppStore((s) => s.binomoCurrency);
-  const binomoAccountType = useAppStore((s) => s.binomoAccountType);
+  const connectionStatus = useAppStore((s) => s.connectionStatus);
+  const selectedSymbol = useAppStore((s) => s.selectedSymbol);
 
   return (
     <aside className="hidden md:flex bg-gray-950 border-r border-gray-800 w-16 md:w-56 flex-col flex-shrink-0 h-screen sticky top-0">
@@ -115,18 +113,23 @@ const Sidebar: React.FC = () => {
         ))}
       </nav>
 
-      {/* Binomo Login Quick Button */}
+      {/* Binomo Platform Action Button */}
       <div className="p-3 border-t border-gray-800/80">
-        <button
-          onClick={() => setShowLoginModal(true)}
+        <a
+          href="https://binomo.com/trading"
+          target="_blank"
+          rel="noopener noreferrer"
           className="w-full p-2.5 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black font-extrabold text-xs shadow-md shadow-yellow-500/10 flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] active:scale-[0.98]"
         >
-          <span>🔑</span>
-          <span className="hidden md:inline">Binomo Login</span>
-        </button>
+          <span>📈</span>
+          <span className="hidden md:inline">Trade on Binomo ↗</span>
+        </a>
         <div className="hidden md:flex items-center justify-between text-[10px] text-gray-500 mt-2 px-1">
-          <span className="capitalize">{binomoAccountType}</span>
-          <span className="text-yellow-400 font-bold">{binomoCurrency} {binomoBalance !== undefined ? binomoBalance.toLocaleString() : '---'}</span>
+          <span className="capitalize text-emerald-400 font-semibold flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {connectionStatus}
+          </span>
+          <span className="text-gray-400 font-mono text-[10px]">{selectedSymbol}</span>
         </div>
       </div>
 

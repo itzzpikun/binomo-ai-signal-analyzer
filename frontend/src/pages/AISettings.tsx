@@ -93,12 +93,20 @@ const AISettings: React.FC = () => {
     groqKey: string;
     deepseekKey: string;
     openrouterKey: string;
+    cloudflareKey: string;
   }>(() => {
     try {
       const stored = localStorage.getItem('binomo_ai_keys');
       if (stored) return JSON.parse(stored);
     } catch {}
-    return { geminiKey: '', openaiKey: '', groqKey: '', deepseekKey: '', openrouterKey: '' };
+    return {
+      geminiKey: '',
+      openaiKey: '',
+      groqKey: '',
+      deepseekKey: '',
+      openrouterKey: '',
+      cloudflareKey: '',
+    };
   });
 
   const [testResults, setTestResults] = useState<
@@ -396,7 +404,111 @@ const AISettings: React.FC = () => {
           )}
         </div>
 
-        {/* 5. Built-in Engine */}
+        {/* 5. OpenRouter (Multi-Model Gateway) */}
+        <div className="bg-gray-950 p-4 rounded-xl border border-gray-800/80 space-y-2.5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-purple-400 font-bold text-sm">🌐 OpenRouter (Multi-Model Gateway)</span>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                ACTIVE
+              </span>
+            </div>
+            <a
+              href="https://openrouter.ai/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-400 hover:underline"
+            >
+              OpenRouter Console ↗
+            </a>
+          </div>
+          <p className="text-gray-400 text-xs">
+            Connects to Meta Llama 3.3 70B, DeepSeek R1, and top open-source models with high reliability.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              placeholder="sk-or-v1-..."
+              value={keys.openrouterKey}
+              onChange={e => setKeys(prev => ({ ...prev, openrouterKey: e.target.value }))}
+              className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-blue-500 font-mono"
+            />
+            <button
+              onClick={() => handleTestKey('openrouter', keys.openrouterKey)}
+              disabled={testResults.openrouter?.testing}
+              className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold text-xs rounded-lg border border-gray-700 transition-colors flex items-center gap-1.5 flex-shrink-0"
+            >
+              {testResults.openrouter?.testing ? 'Testing...' : 'Test Key'}
+            </button>
+          </div>
+          {testResults.openrouter && (
+            <div
+              className={clsx(
+                'text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between',
+                testResults.openrouter.success
+                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                  : 'bg-red-950/60 border-red-500/40 text-red-300'
+              )}
+            >
+              <span>{testResults.openrouter.message}</span>
+              {testResults.openrouter.latencyMs && <span>{testResults.openrouter.latencyMs}ms</span>}
+            </div>
+          )}
+        </div>
+
+        {/* 6. Cloudflare Workers AI */}
+        <div className="bg-gray-950 p-4 rounded-xl border border-gray-800/80 space-y-2.5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400 font-bold text-sm">☁️ Cloudflare Workers AI</span>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                ACTIVE
+              </span>
+            </div>
+            <a
+              href="https://dash.cloudflare.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-400 hover:underline"
+            >
+              Cloudflare Dash ↗
+            </a>
+          </div>
+          <p className="text-gray-400 text-xs">
+            Edge-deployed neural inference with sub-second response times.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              placeholder="cfut_..."
+              value={keys.cloudflareKey}
+              onChange={e => setKeys(prev => ({ ...prev, cloudflareKey: e.target.value }))}
+              className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-blue-500 font-mono"
+            />
+            <button
+              onClick={() => handleTestKey('cloudflare', keys.cloudflareKey)}
+              disabled={testResults.cloudflare?.testing}
+              className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold text-xs rounded-lg border border-gray-700 transition-colors flex items-center gap-1.5 flex-shrink-0"
+            >
+              {testResults.cloudflare?.testing ? 'Testing...' : 'Test Key'}
+            </button>
+          </div>
+          {testResults.cloudflare && (
+            <div
+              className={clsx(
+                'text-xs px-2.5 py-1.5 rounded-lg border flex items-center justify-between',
+                testResults.cloudflare.success
+                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                  : 'bg-red-950/60 border-red-500/40 text-red-300'
+              )}
+            >
+              <span>{testResults.cloudflare.message}</span>
+              {testResults.cloudflare.latencyMs && <span>{testResults.cloudflare.latencyMs}ms</span>}
+            </div>
+          )}
+        </div>
+
+        {/* 7. Built-in Engine */}
         <div className="bg-gray-950 p-4 rounded-xl border border-gray-800/80 flex items-center justify-between flex-wrap gap-2">
           <div>
             <div className="flex items-center gap-2">

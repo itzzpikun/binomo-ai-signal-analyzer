@@ -32,6 +32,7 @@ apiClient.interceptors.request.use((config) => {
       if (keys.groqKey) config.headers['x-groq-key'] = keys.groqKey;
       if (keys.deepseekKey) config.headers['x-deepseek-key'] = keys.deepseekKey;
       if (keys.openrouterKey) config.headers['x-openrouter-key'] = keys.openrouterKey;
+      if (keys.cloudflareKey) config.headers['x-cloudflare-key'] = keys.cloudflareKey;
     }
   } catch {}
   return config;
