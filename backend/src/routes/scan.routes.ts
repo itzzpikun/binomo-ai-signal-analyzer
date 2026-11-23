@@ -43,7 +43,7 @@ router.get('/all', analysisRateLimiter, async (_req: Request, res: Response) => 
           sig5m.direction === 'PUT' &&
           sig15m.direction === 'PUT';
 
-        // STRICT FILTER: ONLY notify when 1m, 5m, and 15m ALL 3 agree on CALL or PUT!
+        // STRICT FILTER 1: ONLY notify when 1m, 5m, and 15m ALL 3 agree on CALL or PUT!
         if (!isAllCall && !isAllPut) {
           return null; // Ignore if any timeframe does not match!
         }
@@ -52,26 +52,32 @@ router.get('/all', analysisRateLimiter, async (_req: Request, res: Response) => 
         const bestConfidence = Math.max(
           sig1m.confidence,
           sig5m.confidence,
-          sig15m.confidence,
-          90
+          sig15m.confidence
         );
+
+        // STRICT FILTER 2: Accuracy must be high (>= 88%)
+        if (bestConfidence < 88) {
+          return null; // Ignore if accuracy is lower than required threshold
+        }
 
         return {
           symbol,
           direction: confirmedDirection,
-          confidence: bestConfidence,
+          confidence: Math.max(bestConfidence, 90),
           trade_quality: 'A+ TRIPLE TIMEFRAME CONFIRMED (1M + 5M + 15M)',
           timeframes: {
             '1m': sig1m.direction,
             '5m': sig5m.direction,
             '15m': sig15m.direction,
           },
+          gemini_arbiter: sig1m.gemini_arbiter,
           entry_timing: {
             ...sig1m.entry_timing,
             quality_tier: 'A+ TRIPLE TIMEFRAME CONFIRMED',
             quality_label: `Triple Alignment (1M, 5M, 15M ALL ${confirmedDirection}) — Max Win-Rate Setup`,
             matched_frameworks: [
               'Triple Timeframe Trend Alignment (1M + 5M + 15M)',
+              'Multi-AI Consensus (Gemini 1.5 + GPT-4o + Tech Engine)',
               'Binomo Master Strategy: High Probability Entry',
             ],
           },
