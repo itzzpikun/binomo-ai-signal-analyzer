@@ -13,6 +13,7 @@ import StatusBadge from '../components/common/StatusBadge';
 import RiskWarning from '../components/common/RiskWarning';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import SignalNotificationBanner from '../components/common/SignalNotificationBanner';
+import TradeTimingCountdown from '../components/signal/TradeTimingCountdown';
 import type { Candle, Signal } from '../types';
 
 const Dashboard: React.FC = () => {
@@ -350,6 +351,14 @@ const Dashboard: React.FC = () => {
 
       <RiskWarning />
 
+      {/* Live Binomo Trade Entry Countdown & Timing Action Panel */}
+      {dataAvailable && (
+        <TradeTimingCountdown
+          interval={selectedInterval}
+          currentSignal={currentSignal}
+        />
+      )}
+
       {/* DATA UNAVAILABLE banner */}
       {!dataAvailable && (
         <div className="flex flex-col items-center justify-center h-64 gap-3 bg-gray-900 border border-yellow-800 rounded-xl p-4 text-center">
@@ -367,16 +376,16 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Main grid */}
+      {/* Main grid — Enlarged Chart & Balanced Signal Panel */}
       {dataAvailable && (
         <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 flex-1 min-h-0">
-          {/* Chart — Responsive & Collapsible on Mobile */}
+          {/* Chart — Substantially Enlarged & Responsive */}
           {showChartOnMobile && (
-            <div className="w-full lg:w-3/5 min-h-[220px] sm:min-h-[380px] flex flex-col">
+            <div className="w-full lg:w-[63%] min-h-[460px] sm:min-h-[560px] lg:min-h-[620px] flex flex-col">
               {candles.length > 0 ? (
                 <CandlestickChart />
               ) : (
-                <div className="bg-gray-900 border border-gray-800 rounded-xl flex-1 flex items-center justify-center p-6 min-h-[220px]">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl flex-1 flex items-center justify-center p-6 min-h-[460px]">
                   <div className="flex flex-col items-center gap-3">
                     <LoadingSpinner />
                     <p className="text-gray-500 text-xs sm:text-sm">Loading market candles…</p>
@@ -386,8 +395,8 @@ const Dashboard: React.FC = () => {
             </div>
           )}
 
-          {/* Signal panel — 40% Desktop / Full on Mobile */}
-          <div className="w-full lg:w-2/5 flex flex-col gap-2.5 sm:gap-3">
+          {/* Signal panel — Optimized & Responsive */}
+          <div className="w-full lg:w-[37%] flex flex-col gap-2.5 sm:gap-3">
             <SignalCard signal={currentSignal} isAnalyzing={isAnalyzing} />
 
             {/* Binomo Live Execution Order Panel */}

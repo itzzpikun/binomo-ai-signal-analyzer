@@ -82,8 +82,8 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ symbol, interval 
   }, [tvSymbol, tvInterval]);
 
   return (
-    <div className="w-full h-full min-h-[380px] sm:min-h-[440px] rounded-xl overflow-hidden bg-gray-950 border border-gray-800">
-      <div ref={containerRef} className="tradingview-widget-container w-full h-full min-h-[380px] sm:min-h-[440px]" />
+    <div className="w-full h-full min-h-[460px] sm:min-h-[560px] lg:min-h-[620px] rounded-xl overflow-hidden bg-gray-950 border border-gray-800">
+      <div ref={containerRef} className="tradingview-widget-container w-full h-full min-h-[460px] sm:min-h-[560px] lg:min-h-[620px]" />
     </div>
   );
 };

@@ -76,7 +76,7 @@ const AssetSelector: React.FC = () => {
 
       {/* Binomo Style Dropdown Modal Matching Screenshot */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-80 sm:w-96 bg-[#1a1d26] border border-gray-700 rounded-2xl shadow-2xl z-50 overflow-hidden backdrop-blur-xl animate-fade-in">
+        <div className="absolute top-full left-0 mt-2 w-80 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-[#1a1d26] border border-gray-700 rounded-2xl shadow-2xl z-50 overflow-hidden backdrop-blur-xl animate-fade-in">
           {/* Header & Search */}
           <div className="p-3 bg-[#13151c] border-b border-gray-800 space-y-2">
             <div className="flex items-center justify-between">

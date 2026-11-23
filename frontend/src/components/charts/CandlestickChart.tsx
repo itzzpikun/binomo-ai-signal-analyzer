@@ -133,7 +133,7 @@ const CandlestickChart: React.FC = () => {
         secondsVisible: false,
       },
       width: containerRef.current.clientWidth || 600,
-      height: Math.max(containerRef.current.clientHeight || 0, 380),
+      height: Math.max(containerRef.current.clientHeight || 0, 520),
     });
 
     chartRef.current = chart;
@@ -365,7 +365,7 @@ const CandlestickChart: React.FC = () => {
       </div>
 
       {chartMode === 'tradingview' ? (
-        <div className="flex-1 w-full min-h-[380px] sm:min-h-[440px] p-1">
+        <div className="flex-1 w-full min-h-[460px] sm:min-h-[560px] lg:min-h-[620px] p-1">
           <TradingViewWidget symbol={selectedSymbol} interval={selectedInterval} />
         </div>
       ) : (
@@ -400,7 +400,7 @@ const CandlestickChart: React.FC = () => {
           </div>
 
           {/* Lightweight Charts Canvas */}
-          <div ref={containerRef} className="flex-1 w-full min-h-[380px] sm:min-h-[440px]" />
+          <div ref={containerRef} className="flex-1 w-full min-h-[460px] sm:min-h-[560px] lg:min-h-[620px]" />
         </>
       )}
     </div>
