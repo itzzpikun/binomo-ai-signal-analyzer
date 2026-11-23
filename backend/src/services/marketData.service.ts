@@ -214,15 +214,21 @@ export function generateLiveBinomoCandles(
     currentPrice = close;
   }
 
-  // Adjust the very last candle to match real-time live seconds (continuous micro-tick)
+  // Adjust the very last candle to smoothly progress in real-time without erratic color-flipping
   if (candles.length > 0) {
     const last = candles[candles.length - 1];
+    const targetClose = last.close;
     const secondsInCurrentCandle = Math.floor(nowMs / 1000) % intervalSeconds;
-    const liveTickWiggle = Math.sin(nowMs / 1500) * (spec.volatility * 0.3 * (secondsInCurrentCandle / intervalSeconds));
-    const liveClose = last.open * (1 + liveTickWiggle);
+    // Smooth deterministic progression from open towards targetClose over the candle duration
+    const progress = Math.min(1, Math.max(0.15, secondsInCurrentCandle / intervalSeconds));
+    const smoothClose = last.open + (targetClose - last.open) * progress;
+    // Ultra-smooth micro drift (at most 5% of normal volatility) so candle direction never erratic flips
+    const microDrift = Math.sin(nowMs / 8000) * (spec.volatility * 0.05);
+    const liveClose = smoothClose * (1 + microDrift);
+
     last.close = parseFloat(liveClose.toFixed(spec.decimals));
-    last.high = parseFloat(Math.max(last.high, last.close).toFixed(spec.decimals));
-    last.low = parseFloat(Math.min(last.low, last.close).toFixed(spec.decimals));
+    last.high = parseFloat(Math.max(last.high, last.close, last.open).toFixed(spec.decimals));
+    last.low = parseFloat(Math.min(last.low, last.close, last.open).toFixed(spec.decimals));
   }
 
   return candles;
