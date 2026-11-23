@@ -140,11 +140,11 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-semibold text-gray-300">
-            ⚡ AI Signal Engine Active (≥75% Confidence Filter)
+            ⚡ AI Signal Engine Active (≥70% Confirmed Filter)
           </span>
           <span className="hidden sm:inline text-gray-500">•</span>
           <span className="text-gray-400 hidden sm:inline">
-            Auto-notifies when Model Confidence reaches ≥75% for verified CALL / PUT entries
+            Auto-notifies when Model Confidence reaches ≥70% for verified CALL / PUT entries
           </span>
         </div>
         {!hasPermission && (

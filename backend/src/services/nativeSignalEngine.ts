@@ -616,14 +616,17 @@ export function analyzeCandlesNative(
   } else if (ema9 < ema21) {
     bearTrend += ema21 < ema50 ? 12 : 8;
   }
-  // Macro trend Price vs SMA 50 / 200 (8 pts)
-  if (currentPrice > sma50) bullTrend += 4;
-  else bearTrend += 4;
-  if (currentPrice > sma200) bullTrend += 4;
-  else bearTrend += 4;
-  // MACD line relative to zero line (5 pts)
-  if (macdData.macd > 0) bullTrend += 5;
-  else bearTrend += 5;
+  // Macro trend Price vs SMA 50 / 200 (6 pts)
+  if (currentPrice > sma50) bullTrend += 3;
+  else bearTrend += 3;
+  if (currentPrice > sma200) bullTrend += 3;
+  else bearTrend += 3;
+  // Directional Movement Index: +DI vs -DI (4 pts)
+  if (adxData.plus_di > adxData.minus_di) bullTrend += 4;
+  else if (adxData.minus_di > adxData.plus_di) bearTrend += 4;
+  // MACD line relative to zero line (3 pts)
+  if (macdData.macd > 0) bullTrend += 3;
+  else bearTrend += 3;
 
   // Momentum (20 pts):
   let bullMom = 0;
@@ -662,6 +665,12 @@ export function analyzeCandlesNative(
   else if (srData.position === 'mid_range') {
     bullPA += 2;
     bearPA += 2;
+  }
+
+  // VWAP Institutional Positioning (3 pts bonus)
+  if (vwapValue) {
+    if (currentPrice >= vwapValue) bullPA = Math.min(20, bullPA + 2);
+    else bearPA = Math.min(20, bearPA + 2);
   }
 
   // Multi-Timeframe Agreement (20 pts):
@@ -865,22 +874,28 @@ export function analyzeCandlesNative(
     });
   }
 
-  const bullPowerPct = Math.round((bullTotal / Math.max(bullTotal + bearTotal, 1)) * 100);
+  const rawBullPower = Math.round((bullTotal / Math.max(bullTotal + bearTotal, 1)) * 100);
+  const bullPowerPct = Math.min(95, Math.max(5, rawBullPower));
   const bearPowerPct = 100 - bullPowerPct;
+  const biasPercentage = Math.max(bullPowerPct, bearPowerPct);
+
+  const watchTrigger =
+    dominantBias === 'CALL'
+      ? `Agli candle EMA 9 (${ema9.toFixed(2)}) ke upar RSI > 50 & ADX > 22 ke sath close hone par confirmed CALL entry banegi`
+      : `Agli candle EMA 9 (${ema9.toFixed(2)}) ke niche RSI < 50 & ADX > 22 ke sath close hone par confirmed PUT entry banegi`;
+
+  const setupSummary =
+    direction === 'WAIT'
+      ? `Status: WAIT • Market developing ${dominantBias} bias (${biasPercentage}% power). ${watchTrigger}.`
+      : `${direction} verified with ${dominantScore}/100 setup score. Low trap risk.`;
 
   const nextProbableSetup: NextProbableSetup = {
     bias: dominantBias,
-    biasPercentage: Math.max(bullPowerPct, bearPowerPct),
+    biasPercentage,
     bullishPower: bullPowerPct,
     bearishPower: bearPowerPct,
-    watchTrigger:
-      dominantBias === 'CALL'
-        ? `Watching for candle close above EMA 9 (${ema9.toFixed(2)}) with RSI > 50 & ADX > 20`
-        : `Watching for candle close below EMA 9 (${ema9.toFixed(2)}) with RSI < 50 & ADX > 20`,
-    setupSummary:
-      direction === 'WAIT'
-        ? `Trade Paused: ${filterReason || 'Waiting for 75+ point confluence'}`
-        : `${direction} verified with ${dominantScore}/100 setup score. Low trap risk.`,
+    watchTrigger,
+    setupSummary,
   };
 
   return {

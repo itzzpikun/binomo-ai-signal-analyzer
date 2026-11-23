@@ -56,6 +56,10 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
   const isCall = direction === 'CALL';
   const isPut = direction === 'PUT';
 
+  const probableSetup = currentSignal?.next_probable_setup;
+  const probableBias = probableSetup?.bias || 'CALL';
+  const probablePct = probableSetup?.biasPercentage || 60;
+
   // Calculate next candle open clock time
   const nextOpenDate = new Date(Date.now() + secondsRemaining * 1000);
   const nextOpenTimeStr = nextOpenDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -134,16 +138,30 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
                   Next Candle Open: <strong className="text-gray-200 font-mono">{nextOpenTimeStr}</strong>
                 </span>
               )}
+
+              {direction === 'WAIT' && (
+                <span className={`text-[11px] font-black uppercase px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+                  probableBias === 'CALL'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-red-500/20 text-red-300 border-red-500/40'
+                }`}>
+                  <span>🔮 Developing: {probableBias} ({probablePct}%)</span>
+                </span>
+              )}
             </div>
 
             <p className="text-xs sm:text-sm font-bold text-gray-100 mt-1">
               {isEntryWindowOpen
                 ? direction !== 'WAIT'
                   ? `👉 Take ${direction} trade right now! Candle just opened (First 15s entry window).`
-                  : 'Candle open window active — wait for confirmed setup.'
+                  : `👉 Candle open window: Status is WAIT (Developing towards ${probableBias} ${probablePct}%). Await confirmation.`
                 : isGetReady
-                ? `Prepare Binomo screen! Enter ${direction !== 'WAIT' ? direction : 'trade'} precisely as candle opens.`
-                : `Enter trades only in the first 15 seconds of candle open (00:00 - 00:15).`}
+                ? direction !== 'WAIT'
+                  ? `Prepare Binomo screen! Enter ${direction} precisely as candle opens.`
+                  : `🚨 Next candle in ${secondsRemaining}s! Market leaning towards ${probableBias} (${probablePct}%). Prepare screen but enter only on 70%+ confirmation.`
+                : direction !== 'WAIT'
+                ? `Enter ${direction} trade strictly in the first 15 seconds of candle open.`
+                : `Status: WAIT • Market developing towards ${probableBias} (${probablePct}%). Next candle opens at ${nextOpenTimeStr}.`}
             </p>
 
             <span className="text-[11px] text-gray-400 block mt-0.5">
@@ -159,13 +177,15 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
             <span
               className={`text-xs sm:text-sm font-black px-2.5 py-1 rounded-lg border inline-flex items-center gap-1.5 ${
                 isCall
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60'
                   : isPut
-                  ? 'bg-red-500/20 text-red-400 border-red-500/40'
-                  : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  ? 'bg-red-500/20 text-red-300 border-red-500/60'
+                  : probableBias === 'CALL'
+                  ? 'bg-amber-500/10 text-amber-300 border-emerald-500/40'
+                  : 'bg-amber-500/10 text-amber-300 border-red-500/40'
               }`}
             >
-              <span>{isCall ? 'CALL (BUY) ↗' : isPut ? 'PUT (SELL) ↘' : 'WAIT (CHOP)'}</span>
+              <span>{isCall ? '▲ CALL' : isPut ? '▼ PUT' : `⚠️ WAIT (${probableBias} ${probablePct}%)`}</span>
               {direction !== 'WAIT' && (
                 <span className="font-mono text-[11px] font-bold">({confidence}%)</span>
               )}

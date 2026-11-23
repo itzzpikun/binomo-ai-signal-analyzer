@@ -745,20 +745,20 @@ def generate_signal(
     nearest_resistance = min((r for r in resistances if r >= close), default=None)
 
     # ── Next Probable Setup Calculation ───────────────────────────────────────
-    total_confs = bull_confirmations + bear_confirmations
-    bull_pct = round((bull_confirmations / max(total_confs, 1)) * 100, 1)
+    raw_bull_pct = round((bull_total / max(bull_total + bear_total, 1)) * 100, 1)
+    bull_pct = min(95.0, max(5.0, raw_bull_pct))
     bear_pct = round(100.0 - bull_pct, 1)
-    probable_bias = "CALL" if bull_pct >= 50 else "PUT"
-    bias_pct = max(bull_pct, bear_pct)
+    probable_bias = dominant_bias
+    bias_pct = int(round(max(bull_pct, bear_pct)))
     watch_trigger = (
-        f"Watching for price bounce above EMA 8/21 ({ema8:.2f}) & RSI > 50 for confirmed CALL entry."
+        f"Agli candle EMA 9 ({ema9:.2f}) ke upar RSI > 50 & ADX > 22 ke sath close hone par confirmed CALL entry banegi"
         if probable_bias == "CALL"
-        else f"Watching for price rejection below EMA 8/21 ({ema8:.2f}) & RSI < 50 for confirmed PUT entry."
+        else f"Agli candle EMA 9 ({ema9:.2f}) ke niche RSI < 50 & ADX > 22 ke sath close hone par confirmed PUT entry banegi"
     )
     setup_summary = (
-        f"Strong {direction} momentum active ({bias_pct}%). {watch_trigger}"
-        if direction != "WAIT"
-        else f"Market unstable / consolidating ({bias_pct}% {probable_bias} balance). {watch_trigger}"
+        f"Status: WAIT • Market developing {dominant_bias} bias ({bias_pct}% power). {watch_trigger}."
+        if direction == "WAIT"
+        else f"Strong {direction} momentum active ({bias_pct}%). {watch_trigger}."
     )
     next_probable_setup = {
         "bias": probable_bias,

@@ -113,13 +113,13 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
     },
     WAIT: {
       bg: 'bg-amber-950/30',
-      border: 'border-amber-500/50',
+      border: 'border-amber-500/60',
       badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
       text: 'text-amber-400',
       glow: 'shadow-amber-500/10',
-      icon: '⚠️',
-      label: `WAIT (Score: ${score}/100)`,
-      sublabel: 'Capital Protection Active: No trade suggested',
+      icon: probableBias === 'CALL' ? '▲' : '▼',
+      label: `WAIT • LIKELY ${probableBias} (${probablePct}%)`,
+      sublabel: `Status: Trade Paused (WAIT) • Developing: ${probableBias} (${probablePct}%)`,
     },
   };
 
@@ -198,6 +198,93 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
           <span className="text-sm">↗</span>
         </a>
       </div>
+
+      {/* 🔮 DEVELOPING MARKET BIAS: NEXT TRADE PREDICTION (Shown prominently during WAIT) */}
+      {isWait && (
+        <div className="w-full bg-gradient-to-r from-gray-950 via-gray-900 to-gray-950 border border-amber-500/40 rounded-xl p-3 sm:p-4 flex flex-col gap-2.5 shadow-xl relative overflow-hidden">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg animate-pulse">🔮</span>
+              <div>
+                <span className="text-xs font-black uppercase tracking-wider text-gray-100 flex items-center gap-1.5">
+                  <span>Developing Market Bias (Next Possible Trade)</span>
+                </span>
+                <span className="text-[11px] text-gray-400 block">
+                  Wait ke baad agla potential trade kis taraf ban raha hai:
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span
+                className={clsx(
+                  'text-xs sm:text-sm font-black px-3 py-1 rounded-lg border flex items-center gap-1.5 shadow-md',
+                  probableBias === 'CALL'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-emerald-500/20'
+                    : 'bg-red-500/20 text-red-300 border-red-500/60 shadow-red-500/20'
+                )}
+              >
+                <span>{probableBias === 'CALL' ? '▲ LIKELY NEXT: CALL (BUY)' : '▼ LIKELY NEXT: PUT (SELL)'}</span>
+                <span className="font-mono text-xs opacity-90">({probablePct}% Odds)</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Bullish vs Bearish Power Meter */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-[11px] font-mono font-bold">
+              <span className="text-emerald-400 flex items-center gap-1">
+                <span>▲ Bullish Momentum:</span> <strong>{bullPower}%</strong>
+              </span>
+              <span className="text-red-400 flex items-center gap-1">
+                <span>▼ Bearish Selling:</span> <strong>{bearPower}%</strong>
+              </span>
+            </div>
+            <div className="w-full bg-gray-800/90 h-2.5 rounded-full overflow-hidden flex border border-gray-700">
+              <div
+                className="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full transition-all duration-500"
+                style={{ width: `${bullPower}%` }}
+              />
+              <div
+                className="bg-gradient-to-r from-red-400 to-red-600 h-full transition-all duration-500"
+                style={{ width: `${bearPower}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Detailed Dual Guidance Boxes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+            <div className="bg-amber-950/40 border border-amber-500/40 rounded-lg p-2.5">
+              <span className="text-[10px] font-bold text-amber-400 block uppercase tracking-wider flex items-center gap-1">
+                <span>🛑</span>
+                <span>Abhi Kyun Ruka Hai (Wait Reason):</span>
+              </span>
+              <p className="text-amber-200 text-xs font-semibold mt-1 leading-snug">
+                {waitReason}
+              </p>
+            </div>
+
+            <div
+              className={clsx(
+                'rounded-lg p-2.5 border',
+                probableBias === 'CALL'
+                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+                  : 'bg-red-950/30 border-red-500/40 text-red-200'
+              )}
+            >
+              <span className="text-[10px] font-bold block uppercase tracking-wider flex items-center gap-1 opacity-90">
+                <span>🎯</span>
+                <span>Confirmed Trade Kab Banna Hai (Trigger):</span>
+              </span>
+              <p className="text-xs font-semibold mt-1 leading-snug">
+                {probableSetup?.watchTrigger || (probableBias === 'CALL'
+                  ? 'Agli candle EMA 9 ke upar RSI > 50 ke sath close hone par confirmed CALL active hoga.'
+                  : 'Agli candle EMA 9 ke niche RSI < 50 ke sath close hone par confirmed PUT active hoga.')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ────────────────────────────────────────────────────────── */}
       {/* 📊 100-POINT QUANTITATIVE SCORING BREAKDOWN (Section 4)    */}
@@ -322,45 +409,19 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
           </div>
         )}
 
-        {/* WAIT Exact Reason Display */}
+        {/* WAIT Exact Timing Guidance Display */}
         {isWait && (
-          <div className="bg-gray-900/90 border border-amber-500/40 rounded-xl p-3 flex flex-col gap-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+          <div className="bg-gray-900/80 border border-amber-500/30 rounded-xl p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-amber-400 font-bold flex items-center gap-1">
                 <span>⚠️</span>
-                <span>TRADE PAUSED: AWAITING QUALIFIED SETUP</span>
+                <span>Entry Protocol: PAUSED</span>
               </span>
-              <span
-                className={`text-[10px] font-black px-2 py-0.5 rounded border ${
-                  probableBias === 'CALL'
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-red-500/20 text-red-300 border-red-500/40'
-                }`}
-              >
-                Lean: {probableBias} ({probablePct}%)
-              </span>
+              <span className="text-gray-400">• Probable Next: <b className={probableBias === 'CALL' ? 'text-emerald-400' : 'text-red-400'}>{probableBias} ({probablePct}%)</b></span>
             </div>
-
-            <div className="bg-gray-950/80 border border-gray-800 rounded-lg p-2.5">
-              <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">
-                🛑 Exact Reason for Avoiding Trade:
-              </span>
-              <p className="text-xs text-amber-300 font-semibold mt-1">
-                {waitReason}
-              </p>
-            </div>
-
-            {/* Bull vs Bear Gauge */}
-            <div>
-              <div className="flex justify-between text-[10px] font-mono mb-1">
-                <span className="text-emerald-400 font-bold">▲ Bulls {bullPower}%</span>
-                <span className="text-red-400 font-bold">▼ Bears {bearPower}%</span>
-              </div>
-              <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden flex">
-                <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${bullPower}%` }} />
-                <div className="bg-red-500 h-full transition-all duration-500" style={{ width: `${bearPower}%` }} />
-              </div>
-            </div>
+            <span className="font-mono text-gray-300 text-[11px]">
+              Next Candle Open in <b className="text-amber-400">{formatTime(secondsRemaining)}</b>
+            </span>
           </div>
         )}
 
