@@ -125,8 +125,8 @@ def evaluate_with_ai(
 
     pat_names = [p.get("name") for p in patterns] if patterns else []
 
-    prompt = f"""You are an elite quantitative technical trader and risk manager specializing in Binomo 5-minute binary options.
-Review the algorithmic mathematical signal and determine if this is an authentic high-probability setup or a trap (e.g., exhaustion, consolidation chop, or counter-trend trap).
+    prompt = f"""You are an elite quantitative technical trader and risk manager specializing in Binomo 1-minute and 5-minute binary options.
+Review the algorithmic mathematical signal and determine if this is an authentic high-probability setup or a trap (e.g., exhaustion, consolidation chop, wick rejection, or counter-trend trap).
 
 MARKET SNAPSHOT:
 - Asset: {symbol}
@@ -137,12 +137,23 @@ MARKET SNAPSHOT:
 - Algorithmic Signal: Direction={math_signal.get('direction')}, Confidence={math_signal.get('confidence')}%, Quality={math_signal.get('trade_quality')}
 - Key Reasons: {math_signal.get('reasons', {})}
 
-CRITERIA:
-1. Approve CALL only if momentum, trend alignment, and price action agree without imminent resistance exhaustion or 4+ consecutive green candle run.
-2. Approve PUT only if momentum, trend alignment, and price action agree without imminent support exhaustion or 4+ consecutive red candle run.
-3. If market is choppy, in an indecisive range, or oscillators contradict prevailing trend, set direction to WAIT.
-4. Assess trap_risk: 'LOW', 'MEDIUM', or 'HIGH'.
-5. Only return CALL or PUT when confidence is >= 75%. If below 75%, return WAIT.
+CRITERIA FOR ACCURACY (ZERO-LOSS TOLERANCE):
+1. REJECT CALL to 'WAIT' if:
+   - Price is piercing or near upper Bollinger Band (%B >= 0.95), which triggers instant red pullback candles.
+   - Preceding candle has an upper rejection wick >= 35% of its range or upper wick > body.
+   - Preceding candle is an indecisive doji/spinning top (body < 45% of range).
+   - RSI > 66 (overbought momentum exhaustion).
+   - EMA trend or Macro trend is Bearish.
+   - 3 or more consecutive green candles without a pause.
+2. REJECT PUT to 'WAIT' if:
+   - Price is piercing or near lower Bollinger Band (%B <= 0.05), which triggers instant green bounce candles.
+   - Preceding candle has a lower rejection wick >= 35% of its range or lower wick > body.
+   - Preceding candle is an indecisive doji/spinning top (body < 45% of range).
+   - RSI < 34 (oversold momentum exhaustion).
+   - EMA trend or Macro trend is Bullish.
+   - 3 or more consecutive red candles without a pause.
+3. If market is in sideways consolidation (ADX < 22) or indicators conflict, ALWAYS output 'WAIT'.
+4. Confirm 'CALL' or 'PUT' ONLY when confidence is >= 75% and all anti-loss criteria pass cleanly. Otherwise return 'WAIT'.
 
 Respond in STRICT JSON with keys:
 {{

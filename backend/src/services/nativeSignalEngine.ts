@@ -785,13 +785,16 @@ export function analyzeCandlesNative(
   let filterTriggered = false;
   let filterReason: string | null = null;
 
+  const lastBodyRatio = lastBody / Math.max(lastRange, 0.0001);
+  const bbPctB = bbData.percent_b;
+
   if (conflictDetected) {
     filterTriggered = true;
     filterReason = `Conflicting Multi-Timeframe Alignment (5M: ${s5m} vs 15M: ${s15m})`;
     waitReasons.push(filterReason);
   } else if (isSideways) {
     filterTriggered = true;
-    filterReason = `Sideways Market Chop Detected (ADX: ${adxData.adx} < 22) — False Signal Risk High`;
+    filterReason = `Sideways Market Chop Detected (ADX: ${adxData.adx.toFixed(1)} < 22) — False Signal Risk High`;
     waitReasons.push(filterReason);
   } else if (isAbnormalVolatility) {
     filterTriggered = true;
@@ -801,13 +804,33 @@ export function analyzeCandlesNative(
     filterTriggered = true;
     filterReason = `False Breakout Wick Rejection at Key Level`;
     waitReasons.push(filterReason);
-  } else if (dominantBias === 'CALL' && isCallWickRejection) {
+  } else if (dominantBias === 'CALL' && (currentPrice >= bbData.upper * 0.9995 || (bbPctB !== undefined && bbPctB >= 0.95))) {
     filterTriggered = true;
-    filterReason = `Upper Wick Rejection near Resistance Level`;
+    filterReason = `Bollinger Band Overbought Exhaustion (%B >= 0.95) — Reversal Trap Risk High`;
     waitReasons.push(filterReason);
-  } else if (dominantBias === 'PUT' && isPutWickRejection) {
+  } else if (dominantBias === 'PUT' && (currentPrice <= bbData.lower * 1.0005 || (bbPctB !== undefined && bbPctB <= 0.05))) {
     filterTriggered = true;
-    filterReason = `Lower Wick Rejection near Support Level`;
+    filterReason = `Bollinger Band Oversold Exhaustion (%B <= 0.05) — Bounce Trap Risk High`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'CALL' && rsi > 66) {
+    filterTriggered = true;
+    filterReason = `RSI Overbought Momentum Exhaustion (RSI: ${rsi.toFixed(1)} > 66) — Pullback Risk High`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'PUT' && rsi < 34) {
+    filterTriggered = true;
+    filterReason = `RSI Oversold Momentum Exhaustion (RSI: ${rsi.toFixed(1)} < 34) — Bounce Risk High`;
+    waitReasons.push(filterReason);
+  } else if (lastBodyRatio < 0.45) {
+    filterTriggered = true;
+    filterReason = `Indecisive Candle Body (Body ${(lastBodyRatio * 100).toFixed(0)}% < 45% of Range) — High Uncertainty`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'CALL' && (lastUpperWick >= 0.38 * lastRange || lastUpperWick >= 0.85 * lastBody)) {
+    filterTriggered = true;
+    filterReason = `Selling Pressure Wick Rejection: Upper Wick (${((lastUpperWick / lastRange) * 100).toFixed(0)}%) contradicts CALL`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'PUT' && (lastLowerWick >= 0.38 * lastRange || lastLowerWick >= 0.85 * lastBody)) {
+    filterTriggered = true;
+    filterReason = `Buying Pressure Wick Rejection: Lower Wick (${((lastLowerWick / lastRange) * 100).toFixed(0)}%) contradicts PUT`;
     waitReasons.push(filterReason);
   } else if (dominantBias === 'CALL' && ema9 < ema21 && currentPrice < ema50) {
     filterTriggered = true;
@@ -817,6 +840,14 @@ export function analyzeCandlesNative(
     filterTriggered = true;
     filterReason = `Anti-Trend Filter: Cannot PUT in strong uptrend (EMA 9 > 21 & Price > EMA 50)`;
     waitReasons.push(filterReason);
+  } else if (dominantBias === 'CALL' && currentPrice < sma50 && sma50 < sma200) {
+    filterTriggered = true;
+    filterReason = `Macro Trend Veto: Prevailing trend is Bearish (Price < SMA 50/200) — Counter-trend CALL blocked`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'PUT' && currentPrice > sma50 && sma50 > sma200) {
+    filterTriggered = true;
+    filterReason = `Macro Trend Veto: Prevailing trend is Bullish (Price > SMA 50/200) — Counter-trend PUT blocked`;
+    waitReasons.push(filterReason);
   } else if (consecutiveSame >= 4 && runColor === 'GREEN' && dominantBias === 'CALL') {
     filterTriggered = true;
     filterReason = `Candle Exhaustion: ${consecutiveSame} consecutive green candles. Retracement risk high. WAIT.`;
@@ -825,9 +856,9 @@ export function analyzeCandlesNative(
     filterTriggered = true;
     filterReason = `Candle Exhaustion: ${consecutiveSame} consecutive red candles. Bounce risk high. WAIT.`;
     waitReasons.push(filterReason);
-  } else if (dominantScore < 70) {
+  } else if (dominantScore < 72) {
     filterTriggered = true;
-    filterReason = `Setup Score (${dominantScore}/100) is below the minimum 70-point quantitative threshold`;
+    filterReason = `Setup Score (${dominantScore}/100) is below the institutional 72-point quantitative threshold`;
     waitReasons.push(filterReason);
   }
 
@@ -913,10 +944,10 @@ export function analyzeCandlesNative(
       isWickRejection,
     },
     entry_timing: {
-      rule_en: `Execute at open of new candle (0-15s window). Fixed ${interval} expiry.`,
-      rule_hi: `Nayi candle open hote hi pehle 10-15 seconds me entry lein. Expiry: ${interval}.`,
-      recommended_action: direction === 'WAIT' ? 'Wait for valid setup' : `Execute ${direction}`,
-      entry_window: 'New Candle Open (0-15s)',
+      rule_en: `Execute at open of new candle (0-10s window strictly). DO NOT enter mid-candle. Fixed ${interval} expiry.`,
+      rule_hi: `Nayi candle open hote hi pehle 0-10 seconds me entry lein. Candle ke beech me trade bilkul na lein varna loss hoga. Expiry: ${interval}.`,
+      recommended_action: direction === 'WAIT' ? 'Wait for valid setup' : `Execute ${direction} at candle open (00:00 - 00:10)`,
+      entry_window: 'Candle Open Window: 00:00 - 00:10 (Strict)',
       expiry_duration: `${interval} (Fixed)`,
       confluence_count: dominantScore,
       quality_tier: direction !== 'WAIT' ? (dominantScore >= 85 ? 'Strong Setup (85-100 pts)' : 'Moderate Setup (70-84 pts)') : 'Awaiting 70+ Score Confluence',

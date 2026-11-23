@@ -259,7 +259,7 @@ export const aiProviderService = {
     const activeCloudflare = (keys as any).cloudflareKey || ENV.CLOUDFLARE_API_KEY || process.env['CLOUDFLARE_API_KEY'];
 
     // Construct prompt for independent evaluation
-    const prompt = `You are a Senior Quantitative Binary Options Trading Arbiter for Binomo.
+    const prompt = `You are a Senior Quantitative Binary Options Trading Arbiter for Binomo (Zero-Loss Tolerance).
 Asset: ${symbol} (${interval})
 Indicators:
 - RSI (14): ${rsi}
@@ -268,11 +268,15 @@ Indicators:
 - Market Confluence: Bulls ${bullPower}% vs Bears ${bearPower}%
 - Technical Lean: ${probableBias}
 
-RULE: Confirm CALL or PUT ONLY if setup has strictly >= 70% probability with acceptable trap risk. If market is in choppy consolidation, contradictory, or confidence < 70%, respond WAIT.
+CRITERIA FOR ACCURACY:
+1. REJECT CALL to WAIT if RSI > 66, if trend is BEARISH, if price has upper wick rejection, or if market is in choppy consolidation (ADX < 22).
+2. REJECT PUT to WAIT if RSI < 34, if trend is BULLISH, if price has lower wick rejection, or if market is in choppy consolidation (ADX < 22).
+3. Confirm CALL or PUT ONLY if setup has strictly >= 75% probability and crystal clear momentum. If in any doubt, respond WAIT.
+
 Return JSON ONLY with this schema:
 {
   "direction": "CALL" | "PUT" | "WAIT",
-  "confidence": number (between 70 and 98 for CALL/PUT, or < 70 for WAIT),
+  "confidence": number (between 75 and 98 for CALL/PUT, or < 70 for WAIT),
   "trap_risk": "LOW" | "MEDIUM" | "HIGH",
   "reason_hi": "Hindi explanation",
   "reason_en": "English explanation"
@@ -295,7 +299,7 @@ Return JSON ONLY with this schema:
           },
         };
       }
-      let finalDir = (aiDir as any) || techDir;
+      let finalDir: 'CALL' | 'PUT' | 'WAIT' = (aiDir === 'CALL' || aiDir === 'PUT') ? aiDir : 'WAIT';
       let finalConf = conf;
       if (finalDir !== 'WAIT' && finalConf < 70) {
         finalDir = 'WAIT';
@@ -331,8 +335,9 @@ Return JSON ONLY with this schema:
           { headers: { Authorization: `Bearer ${activeGroq}` }, timeout: 2500 }
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
-        const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return checkContradiction(parsed.direction || probableBias, 'Groq (Llama 3.3)', conf, parsed.reason_en, parsed.reason_hi);
+        const parsedDir = (parsed.direction === 'CALL' || parsed.direction === 'PUT') ? parsed.direction : 'WAIT';
+        const conf = Math.min(98, Math.max(40, Number(parsed.confidence) || (parsedDir === 'WAIT' ? 60 : 75)));
+        return checkContradiction(parsedDir, 'Groq (Llama 3.3)', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -351,8 +356,9 @@ Return JSON ONLY with this schema:
           { headers: { Authorization: `Bearer ${activeDeepSeek}` }, timeout: 2500 }
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
-        const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return checkContradiction(parsed.direction || probableBias, 'DeepSeek', conf, parsed.reason_en, parsed.reason_hi);
+        const parsedDir = (parsed.direction === 'CALL' || parsed.direction === 'PUT') ? parsed.direction : 'WAIT';
+        const conf = Math.min(98, Math.max(40, Number(parsed.confidence) || (parsedDir === 'WAIT' ? 60 : 75)));
+        return checkContradiction(parsedDir, 'DeepSeek', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -371,8 +377,9 @@ Return JSON ONLY with this schema:
           { headers: { Authorization: `Bearer ${activeOpenAI}` }, timeout: 2500 }
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
-        const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return checkContradiction(parsed.direction || probableBias, 'OpenAI GPT-4o', conf, parsed.reason_en, parsed.reason_hi);
+        const parsedDir = (parsed.direction === 'CALL' || parsed.direction === 'PUT') ? parsed.direction : 'WAIT';
+        const conf = Math.min(98, Math.max(40, Number(parsed.confidence) || (parsedDir === 'WAIT' ? 60 : 75)));
+        return checkContradiction(parsedDir, 'OpenAI GPT-4o', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -398,8 +405,9 @@ Return JSON ONLY with this schema:
         const content = res.data.choices[0].message.content;
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-        const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return checkContradiction(parsed.direction || probableBias, 'OpenRouter (Llama 3.3)', conf, parsed.reason_en, parsed.reason_hi);
+        const parsedDir = (parsed.direction === 'CALL' || parsed.direction === 'PUT') ? parsed.direction : 'WAIT';
+        const conf = Math.min(98, Math.max(40, Number(parsed.confidence) || (parsedDir === 'WAIT' ? 60 : 75)));
+        return checkContradiction(parsedDir, 'OpenRouter (Llama 3.3)', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -417,8 +425,9 @@ Return JSON ONLY with this schema:
         );
         const text = res.data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(text);
-        const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return checkContradiction(parsed.direction || probableBias, 'Google Gemini 1.5 Flash', conf, parsed.reason_en, parsed.reason_hi);
+        const parsedDir = (parsed.direction === 'CALL' || parsed.direction === 'PUT') ? parsed.direction : 'WAIT';
+        const conf = Math.min(98, Math.max(40, Number(parsed.confidence) || (parsedDir === 'WAIT' ? 60 : 75)));
+        return checkContradiction(parsedDir, 'Google Gemini 1.5 Flash', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 

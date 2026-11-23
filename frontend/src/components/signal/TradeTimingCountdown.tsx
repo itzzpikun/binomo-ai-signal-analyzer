@@ -42,11 +42,12 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
   };
 
   // State phases:
-  // 1. ENTRY_WINDOW_OPEN: First 15 seconds of candle open (elapsed <= 15)
-  // 2. GET_READY: Last 12 seconds before candle close (secondsRemaining <= 12)
-  // 3. WAITING: Middle of candle
-  const isEntryWindowOpen = elapsedInCandle <= 15;
-  const isGetReady = !isEntryWindowOpen && secondsRemaining <= 12;
+  // 1. ENTRY_WINDOW_OPEN: First 10 seconds of candle open (elapsed <= 10)
+  // 2. GET_READY: Last 10 seconds before candle close (secondsRemaining <= 10)
+  // 3. LATE_WINDOW: Middle of candle (10s elapsed to 10s remaining) — LATE ENTRY STRICTLY BLOCKED!
+  const isEntryWindowOpen = elapsedInCandle <= 10;
+  const isGetReady = !isEntryWindowOpen && secondsRemaining <= 10;
+  const isLateWindow = !isEntryWindowOpen && !isGetReady;
 
   const direction =
     (currentSignal?.direction === 'CALL' || currentSignal?.direction === 'PUT') && (currentSignal?.confidence || 0) >= 70
@@ -78,6 +79,8 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
             : 'bg-gradient-to-r from-amber-950/80 via-amber-900/50 to-gray-950 border-amber-500/80'
           : isGetReady
           ? 'bg-gradient-to-r from-amber-950/70 via-gray-900 to-gray-950 border-amber-500/70 animate-pulse'
+          : direction !== 'WAIT'
+          ? 'bg-gradient-to-r from-rose-950/40 via-gray-900 to-gray-950 border-rose-500/40'
           : 'bg-[#121622]/95 border-gray-800'
       }`}
     >
@@ -101,14 +104,16 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
                     : 'bg-amber-500 text-black border-amber-300'
                   : isGetReady
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 animate-pulse'
+                  : isLateWindow && direction !== 'WAIT'
+                  ? 'bg-rose-900/40 text-rose-300 border-rose-600/60'
                   : 'bg-gray-800/90 text-gray-200 border-gray-700'
               }`}
             >
               <span className="text-[10px] leading-none opacity-80 uppercase font-sans">
-                {isEntryWindowOpen ? 'OPEN' : 'TICK'}
+                {isEntryWindowOpen ? 'OPEN' : isLateWindow && direction !== 'WAIT' ? 'LOCK' : 'TICK'}
               </span>
               <span className="text-base sm:text-lg font-black leading-tight">
-                {isEntryWindowOpen ? `${15 - elapsedInCandle}s` : formatMMSS(secondsRemaining)}
+                {isEntryWindowOpen ? `${10 - elapsedInCandle}s` : formatMMSS(secondsRemaining)}
               </span>
             </div>
             {isEntryWindowOpen && (
@@ -127,11 +132,16 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
                   isCall ? 'bg-emerald-500 text-black animate-pulse' : isPut ? 'bg-red-500 text-white animate-pulse' : 'bg-amber-400 text-black'
                 }`}>
                   <span className="w-2 h-2 rounded-full bg-current" />
-                  🔥 ENTRY WINDOW ACTIVE NOW!
+                  🔥 ENTRY WINDOW ACTIVE NOW (0-10s)!
                 </span>
               ) : isGetReady ? (
                 <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-amber-400 text-black animate-pulse">
                   🚨 GET READY! NEXT CANDLE IN {secondsRemaining}s
+                </span>
+              ) : isLateWindow && direction !== 'WAIT' ? (
+                <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1">
+                  <span>⛔</span>
+                  <span>MID-CANDLE LATE ENTRY BLOCKED</span>
                 </span>
               ) : (
                 <span className="text-[11px] text-gray-400 font-medium">
@@ -153,19 +163,19 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
             <p className="text-xs sm:text-sm font-bold text-gray-100 mt-1">
               {isEntryWindowOpen
                 ? direction !== 'WAIT'
-                  ? `👉 Take ${direction} trade right now! Candle just opened (First 15s entry window).`
+                  ? `👉 Take ${direction} trade right now! Candle just opened (First 10s entry window).`
                   : `👉 Candle open window: Status is WAIT (Developing towards ${probableBias} ${probablePct}%). Await confirmation.`
                 : isGetReady
                 ? direction !== 'WAIT'
-                  ? `Prepare Binomo screen! Enter ${direction} precisely as candle opens.`
+                  ? `Prepare Binomo screen! Enter ${direction} precisely as candle opens in ${secondsRemaining}s.`
                   : `🚨 Next candle in ${secondsRemaining}s! Market leaning towards ${probableBias} (${probablePct}%). Prepare screen but enter only on 70%+ confirmation.`
-                : direction !== 'WAIT'
-                ? `Enter ${direction} trade strictly in the first 15 seconds of candle open.`
+                : isLateWindow && direction !== 'WAIT'
+                ? `⛔ DO NOT ENTER NOW! Candle already ran ${elapsedInCandle}s. Entering mid-candle leads to wick losses. Wait for next candle open in ${formatMMSS(secondsRemaining)}.`
                 : `Status: WAIT • Market developing towards ${probableBias} (${probablePct}%). Next candle opens at ${nextOpenTimeStr}.`}
             </p>
 
             <span className="text-[11px] text-gray-400 block mt-0.5">
-              Rule: <span className="text-yellow-400 font-semibold">Candle Open 15-Sec Rule</span> • Suggested Expiry: <strong className="text-gray-200">{interval === '1min' ? '1 Min' : '5 Mins'} (Fixed)</strong>
+              Rule: <span className="text-yellow-400 font-semibold">Candle Open 10-Sec Rule</span> • Suggested Expiry: <strong className="text-gray-200">{interval === '1min' ? '1 Min' : '5 Mins'} (Fixed)</strong>
             </span>
           </div>
         </div>
@@ -177,15 +187,19 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
             <span
               className={`text-xs sm:text-sm font-black px-2.5 py-1 rounded-lg border inline-flex items-center gap-1.5 ${
                 isCall
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60'
+                  ? isLateWindow
+                    ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40 opacity-80'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60'
                   : isPut
-                  ? 'bg-red-500/20 text-red-300 border-red-500/60'
+                  ? isLateWindow
+                    ? 'bg-red-950/60 text-red-300 border-red-500/40 opacity-80'
+                    : 'bg-red-500/20 text-red-300 border-red-500/60'
                   : probableBias === 'CALL'
                   ? 'bg-amber-500/10 text-amber-300 border-emerald-500/40'
                   : 'bg-amber-500/10 text-amber-300 border-red-500/40'
               }`}
             >
-              <span>{isCall ? '▲ CALL' : isPut ? '▼ PUT' : `⚠️ WAIT (${probableBias} ${probablePct}%)`}</span>
+              <span>{isCall ? (isLateWindow ? '▲ CALL (Locked)' : '▲ CALL') : isPut ? (isLateWindow ? '▼ PUT (Locked)' : '▼ PUT') : `⚠️ WAIT (${probableBias} ${probablePct}%)`}</span>
               {direction !== 'WAIT' && (
                 <span className="font-mono text-[11px] font-bold">({confidence}%)</span>
               )}
@@ -216,12 +230,23 @@ export const TradeTimingCountdown: React.FC<TradeTimingCountdownProps> = ({
           }`}
           style={{ width: `${progressPct}%` }}
         />
-        {/* Entry window marker at 15s */}
+        {/* Entry window marker at 10s */}
         <div
           className="absolute top-0 bottom-0 w-0.5 bg-yellow-400"
-          style={{ left: `${(15 / intervalSeconds) * 100}%` }}
-          title="15s Entry Window Boundary"
+          style={{ left: `${(10 / intervalSeconds) * 100}%` }}
+          title="10s Entry Window Boundary"
         />
+      </div>
+
+      {/* Binomo Zero-Loss Strategy Guidance Note */}
+      <div className="mt-2 pt-2 border-t border-gray-800/80 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-gray-400 gap-1">
+        <span className="flex items-center gap-1 text-yellow-400 font-bold">
+          <span>💡</span>
+          <span>Binomo Pro Tip:</span>
+        </span>
+        <span className="text-gray-300">
+          Candle ke beech me trade lene se loss hota hai. Hamesha candle shuru hone ke pehle <b>0-10 second</b> me hi trade enter karein.
+        </span>
       </div>
     </div>
   );

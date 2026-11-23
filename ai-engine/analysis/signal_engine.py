@@ -570,9 +570,16 @@ def generate_signal(
     filter_triggered = False
     filter_reason = None
 
+    last_range = max(highs[-1] - lows[-1], 1e-6)
     last_body = abs(closes[-1] - candles[-1].get("open", closes[-1]))
+    last_body_ratio = last_body / last_range
     last_upper_wick = highs[-1] - max(closes[-1], candles[-1].get("open", closes[-1]))
     last_lower_wick = min(closes[-1], candles[-1].get("open", closes[-1])) - lows[-1]
+
+    bb_pct_b = bb.get("percent_b", 0.5)
+    bb_upper = bb.get("upper", float("inf"))
+    bb_lower = bb.get("lower", float("-inf"))
+    macro_trend = macro_trend_dict.get("trend", "NEUTRAL")
 
     # Filter 1: Dead Market / Sideways Chop / Balanced Contradiction
     if is_dead_market:
@@ -599,7 +606,60 @@ def generate_signal(
         filter_reason = "Anti-Trend Filter: Cannot PUT in strong uptrend (EMA 9 > 21 & Price > EMA 50)"
         all_bull_reasons.append(filter_reason)
 
-    # Filter 3: Consecutive Candle Run Exhaustion
+    # Filter 3: Macro Higher-Timeframe Trend Veto (Price vs EMA 50 & 200)
+    elif dominant_bias == "CALL" and macro_trend in ("STRONG_BEARISH", "MILD_BEARISH") and not divergence_dict.get("bullish_divergence"):
+        filter_triggered = True
+        filter_reason = f"Macro Trend Veto: Prevailing trend is Bearish ({macro_trend}) — Counter-trend CALL blocked"
+        all_bear_reasons.append(filter_reason)
+
+    elif dominant_bias == "PUT" and macro_trend in ("STRONG_BULLISH", "MILD_BULLISH") and not divergence_dict.get("bearish_divergence"):
+        filter_triggered = True
+        filter_reason = f"Macro Trend Veto: Prevailing trend is Bullish ({macro_trend}) — Counter-trend PUT blocked"
+        all_bull_reasons.append(filter_reason)
+
+    # Filter 4: Bollinger Band Overbought/Oversold Reversal Traps
+    elif dominant_bias == "CALL" and (close >= bb_upper * 0.9995 or (not math.isnan(bb_pct_b) and bb_pct_b >= 0.95)):
+        filter_triggered = True
+        filter_reason = f"Bollinger Band Overbought Exhaustion (%B={bb_pct_b:.2f} >= 0.95) — Sharp Reversal Trap Risk High"
+        all_bear_reasons.append(filter_reason)
+
+    elif dominant_bias == "PUT" and (close <= bb_lower * 1.0005 or (not math.isnan(bb_pct_b) and bb_pct_b <= 0.05)):
+        filter_triggered = True
+        filter_reason = f"Bollinger Band Oversold Exhaustion (%B={bb_pct_b:.2f} <= 0.05) — Sharp Bounce Trap Risk High"
+        all_bull_reasons.append(filter_reason)
+
+    # Filter 5: RSI Momentum Over-Extension
+    elif dominant_bias == "CALL" and rsi_val > 66.0:
+        filter_triggered = True
+        filter_reason = f"RSI Overbought Momentum Exhaustion (RSI: {rsi_val:.1f} > 66) — Pullback Risk High"
+        all_bear_reasons.append(filter_reason)
+
+    elif dominant_bias == "PUT" and rsi_val < 34.0:
+        filter_triggered = True
+        filter_reason = f"RSI Oversold Momentum Exhaustion (RSI: {rsi_val:.1f} < 34) — Bounce Risk High"
+        all_bull_reasons.append(filter_reason)
+
+    # Filter 6: Indecisive Candle Body (Doji / Spinning Top / Weak Momentum)
+    elif last_body_ratio < 0.45:
+        filter_triggered = True
+        filter_reason = f"Indecisive Candle Body (Body is only {last_body_ratio*100:.0f}% < 45% of Range) — High Directional Uncertainty"
+        if dominant_bias == "CALL":
+            all_bear_reasons.append(filter_reason)
+        else:
+            all_bull_reasons.append(filter_reason)
+
+    # Filter 7: Universal Rejection Wick Filter (Upper wick kills CALL, Lower wick kills PUT)
+    elif dominant_bias == "CALL" and (last_upper_wick >= 0.38 * last_range or last_upper_wick >= 0.85 * max(last_body, 1e-6)):
+        filter_triggered = True
+        filter_reason = f"Selling Pressure Wick Rejection: Upper Wick ({last_upper_wick/last_range*100:.0f}% of candle) contradicts CALL"
+        all_bear_reasons.append(filter_reason)
+
+    elif dominant_bias == "PUT" and (last_lower_wick >= 0.38 * last_range or last_lower_wick >= 0.85 * max(last_body, 1e-6)):
+        filter_triggered = True
+        filter_reason = f"Buying Pressure Wick Rejection: Lower Wick ({last_lower_wick/last_range*100:.0f}% of candle) contradicts PUT"
+        all_bull_reasons.append(filter_reason)
+
+    # Filter 8: Consecutive Candle Run Exhaustion
     elif exhaustion_dict.get("exhaustion_risk") and dominant_bias == "CALL" and exhaustion_dict.get("run_direction") == "GREEN":
         filter_triggered = True
         filter_reason = f"Candle Exhaustion: {exhaustion_dict.get('run_count', 4)}+ consecutive green candles. Retracement risk high. WAIT."
@@ -610,21 +670,11 @@ def generate_signal(
         filter_reason = f"Candle Exhaustion: {exhaustion_dict.get('run_count', 4)}+ consecutive red candles. Bounce risk high. WAIT."
         all_bull_reasons.append(filter_reason)
 
-    # Filter 4: S/R Wick Rejection
-    elif dominant_bias == "CALL" and sr_pos == "at_resistance" and last_upper_wick > 1.8 * max(last_body, 1e-6):
+    # Filter 9: Strict 72%+ Institutional Quantitative Threshold & Min 4 Confirmations
+    elif dominant_score < 72 or (dominant_bias == "CALL" and bull_confirmations < 4) or (dominant_bias == "PUT" and bear_confirmations < 4):
         filter_triggered = True
-        filter_reason = "Upper Wick Rejection near Resistance Level — High Rejection Risk"
-        all_bear_reasons.append(filter_reason)
-
-    elif dominant_bias == "PUT" and sr_pos == "at_support" and last_lower_wick > 1.8 * max(last_body, 1e-6):
-        filter_triggered = True
-        filter_reason = "Lower Wick Rejection near Support Level — High Rejection Risk"
-        all_bull_reasons.append(filter_reason)
-
-    # Filter 5: Strict 70%+ Quantitative Threshold & Min 3 Confirmations
-    elif dominant_score < 70 or (dominant_bias == "CALL" and bull_confirmations < 3) or (dominant_bias == "PUT" and bear_confirmations < 3):
-        filter_triggered = True
-        filter_reason = f"Setup Score ({dominant_score}/100) is below the minimum 70-point quantitative threshold"
+        req_conf = bull_confirmations if dominant_bias == "CALL" else bear_confirmations
+        filter_reason = f"Setup Score ({dominant_score}/100) or Confluence ({req_conf}/10) below high-accuracy threshold (Min 72 pts, 4 confluences)"
         if dominant_bias == "CALL":
             all_bear_reasons.append(filter_reason)
         else:
@@ -727,11 +777,12 @@ def generate_signal(
 
     # ── Exact Entry Timing & Horizon Information ──────────────────────────────
     entry_timing_info = {
-        "rule_en": "Enter trade at the OPEN of the NEXT 5-minute candle within the first 10-15 seconds.",
-        "rule_hi": "Agli 5-minute candle shuru hote hi pehle 10-15 seconds me trade lein (Candle Open Entry).",
-        "recommended_action": f"Take {direction} trade on next candle open" if direction != "WAIT" else "Wait. No confirmed tradeable setup at this moment.",
-        "entry_window": "First 15 seconds of candle open (00:00 - 00:15)",
-        "expiry_duration": "5 Minutes (Fixed M5 expiry)",
+        "rule_en": "Enter trade at the OPEN of the NEXT candle strictly within the first 0-10 seconds. DO NOT enter mid-candle.",
+        "rule_hi": "Agli candle shuru hote hi pehle 0-10 seconds ke andar entry lein. Candle ke beech me trade bilkul na lein varna loss hoga.",
+        "recommended_action": f"Take {direction} trade on next candle open (00:00 - 00:10)" if direction != "WAIT" else "Wait. No confirmed tradeable setup at this moment.",
+        "entry_window": "Candle Open Window: 00:00 - 00:10 (Strict)",
+        "late_entry_warning": "DO NOT ENTER after 10 seconds of candle open — high loss probability due to wick pullbacks.",
+        "expiry_duration": "1-5 Minutes (Fixed expiry)",
         "confluence_count": confluence_count,
         "quality_tier": trade_quality,
         "quality_label": quality_label,

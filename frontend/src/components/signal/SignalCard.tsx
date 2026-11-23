@@ -34,7 +34,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const isEntryWindowActive = secondsRemaining >= intervalSeconds - 15;
+  const isEntryWindowActive = secondsRemaining >= intervalSeconds - 10;
   const isPrepareWindow = secondsRemaining <= 10;
 
   if (!signal) {
@@ -377,10 +377,10 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
             <span className="text-lg">🔥</span>
             <div className="text-xs">
               <span className="font-extrabold text-emerald-300 uppercase tracking-wide">
-                ACTIVE ENTRY WINDOW NOW!
+                ACTIVE ENTRY WINDOW NOW (0-10s)!
               </span>
               <p className="text-emerald-200/90 text-[11px] mt-0.5">
-                New candle opened. Execute <b>{effectiveDirection}</b> on Binomo within first 15 seconds!
+                New candle opened. Execute <b>{effectiveDirection}</b> on Binomo within first 10 seconds!
               </p>
             </div>
           </div>
@@ -401,9 +401,19 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
         )}
 
         {!isWait && !isEntryWindowActive && !isPrepareWindow && (
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-2 flex items-center justify-between text-xs">
-            <span className="text-gray-400">Next Candle Entry Window In:</span>
-            <span className="font-mono font-bold text-amber-400 text-sm">
+          <div className="bg-rose-950/50 border border-rose-500/60 rounded-lg p-2.5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⛔</span>
+              <div>
+                <span className="font-extrabold text-rose-300 uppercase tracking-wide block">
+                  MID-CANDLE LATE ENTRY BLOCKED!
+                </span>
+                <p className="text-rose-200/80 text-[11px] mt-0.5">
+                  Candle already running. DO NOT enter now to avoid wick loss. Next open in:
+                </p>
+              </div>
+            </div>
+            <span className="font-mono font-black text-rose-400 text-sm flex-shrink-0 ml-2">
               {formatTime(secondsRemaining)}
             </span>
           </div>
