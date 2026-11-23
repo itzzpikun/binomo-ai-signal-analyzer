@@ -244,6 +244,17 @@ function detectCandlePatterns(candles: OHLCCandle[]) {
   return patterns;
 }
 
+// ── In-Memory Signal Latching / Persistence ──────────────────
+// Ensures signals hold for the candle trade duration without flickering to WAIT
+interface LatchedSignal {
+  direction: 'CALL' | 'PUT';
+  confidence: number;
+  trade_quality: string;
+  expiresAt: number;
+}
+
+const signalLatchMap = new Map<string, LatchedSignal>();
+
 // ── Main Native Analysis Engine ──────────────────────────────
 
 export function analyzeCandlesNative(
@@ -251,7 +262,7 @@ export function analyzeCandlesNative(
   symbol = 'Crypto IDX',
   interval = '1min'
 ): NativeSignalResult {
-  const minRequired = 10;
+  const minRequired = 5;
   if (candles.length < minRequired) {
     return {
       direction: 'WAIT',
@@ -327,67 +338,103 @@ export function analyzeCandlesNative(
   let bullConfluences = 0;
   let bearConfluences = 0;
 
-  // Binomo Strategy #1: EMA 8 & EMA 21
-  if (ema8 > ema21 && currentClose > ema8) {
-    bullConfluences += 1.5;
-    bullReasons.push(`Binomo Strategy #1 Confirmed: EMA 8 (${ema8.toFixed(2)}) > EMA 21 (${ema21.toFixed(2)}) & Price > EMA 8`);
-  } else if (ema8 < ema21 && currentClose < ema8) {
-    bearConfluences += 1.5;
-    bearReasons.push(`Binomo Strategy #1 Confirmed: EMA 8 (${ema8.toFixed(2)}) < EMA 21 (${ema21.toFixed(2)}) & Price < EMA 8`);
+  // 1. Binomo Strategy #1: EMA 8 & EMA 21 Trend & Dynamic Support
+  if (ema8 >= ema21) {
+    bullConfluences += 1.4;
+    bullReasons.push(`Binomo Strategy #1: EMA 8 (${ema8.toFixed(2)}) > EMA 21 (${ema21.toFixed(2)}) Bullish Trend`);
+    if (currentClose >= ema8) {
+      bullConfluences += 0.8;
+      bullReasons.push('Price holding above fast EMA 8 momentum line');
+    } else {
+      bullConfluences += 0.6;
+      bullReasons.push('Price testing EMA 8/21 dynamic support (Pullback bounce setup)');
+    }
+  } else {
+    bearConfluences += 1.4;
+    bearReasons.push(`Binomo Strategy #1: EMA 8 (${ema8.toFixed(2)}) < EMA 21 (${ema21.toFixed(2)}) Bearish Trend`);
+    if (currentClose <= ema8) {
+      bearConfluences += 0.8;
+      bearReasons.push('Price holding below fast EMA 8 resistance line');
+    } else {
+      bearConfluences += 0.6;
+      bearReasons.push('Price testing EMA 8/21 dynamic resistance (Pullback rejection setup)');
+    }
   }
 
-  // Binomo Strategy #2: EMA 28 + ADX 5
-  if (adxData.plus_di > adxData.minus_di && currentClose > ema28) {
+  // 2. Candle Price Action Momentum
+  const lastCandle = candles[candles.length - 1];
+  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
+  const isLastGreen = lastCandle.close >= lastCandle.open;
+  const isPrevGreen = prevCandle ? prevCandle.close >= prevCandle.open : isLastGreen;
+
+  if (isLastGreen) {
     bullConfluences += 1.2;
-    bullReasons.push(`Binomo Strategy #2: +DI (${adxData.plus_di}) > -DI (${adxData.minus_di}) with Price > EMA 28`);
-  } else if (adxData.minus_di > adxData.plus_di && currentClose < ema28) {
+    bullReasons.push('Active candle closed Bullish (Green) with buyer control');
+    if (isPrevGreen) {
+      bullConfluences += 0.6;
+      bullReasons.push('Consecutive Bullish candles — Upward momentum continuation');
+    }
+  } else {
     bearConfluences += 1.2;
-    bearReasons.push(`Binomo Strategy #2: -DI (${adxData.minus_di}) > +DI (${adxData.plus_di}) with Price < EMA 28`);
+    bearReasons.push('Active candle closed Bearish (Red) with seller control');
+    if (!isPrevGreen) {
+      bearConfluences += 0.6;
+      bearReasons.push('Consecutive Bearish candles — Downward momentum continuation');
+    }
   }
 
-  // Binomo Strategy #3: Awesome Oscillator
-  if (aoData.ao > 0 && aoData.color === 'green') {
+  // 3. Binomo Strategy #2: EMA 28 + ADX 5
+  if (adxData.plus_di >= adxData.minus_di) {
+    bullConfluences += 1.1;
+    bullReasons.push(`Binomo Strategy #2: +DI (${adxData.plus_di}) > -DI (${adxData.minus_di}) Buyers Dominating`);
+  } else {
+    bearConfluences += 1.1;
+    bearReasons.push(`Binomo Strategy #2: -DI (${adxData.minus_di}) > +DI (${adxData.plus_di}) Sellers Dominating`);
+  }
+
+  // 4. Binomo Strategy #3: Awesome Oscillator
+  if (aoData.color === 'green' || aoData.ao > 0) {
+    bullConfluences += 0.9;
+    bullReasons.push('Binomo Strategy #3: Awesome Oscillator Bullish');
+  } else {
+    bearConfluences += 0.9;
+    bearReasons.push('Binomo Strategy #3: Awesome Oscillator Bearish');
+  }
+
+  // 5. RSI Momentum & Boundaries
+  if (rsiVal < 32) {
+    bullConfluences += 1.6;
+    bullReasons.push(`RSI Oversold (${rsiVal.toFixed(1)}) — High Probability Bullish Reversal CALL`);
+  } else if (rsiVal > 68) {
+    bearConfluences += 1.6;
+    bearReasons.push(`RSI Overbought (${rsiVal.toFixed(1)}) — High Probability Bearish Pullback PUT`);
+  } else if (rsiVal >= 50) {
     bullConfluences += 1.0;
-    bullReasons.push('Binomo Strategy #3: Awesome Oscillator expanding green above zero line');
-  } else if (aoData.ao < 0 && aoData.color === 'red') {
-    bearConfluences += 1.0;
-    bearReasons.push('Binomo Strategy #3: Awesome Oscillator declining red below zero line');
-  }
-
-  // RSI Momentum & Boundaries
-  if (rsiVal < 35) {
-    bullConfluences += 1.2;
-    bullReasons.push(`RSI Oversold (${rsiVal.toFixed(1)}) — High Probability Bullish Reversal`);
-  } else if (rsiVal > 65) {
-    bearConfluences += 1.2;
-    bearReasons.push(`RSI Overbought (${rsiVal.toFixed(1)}) — High Probability Bearish Pullback`);
-  } else if (rsiVal > 52) {
-    bullConfluences += 0.8;
     bullReasons.push(`RSI Bullish Momentum (${rsiVal.toFixed(1)}) above 50 midline`);
-  } else if (rsiVal < 48) {
-    bearConfluences += 0.8;
+  } else {
+    bearConfluences += 1.0;
     bearReasons.push(`RSI Bearish Momentum (${rsiVal.toFixed(1)}) below 50 midline`);
   }
 
-  // MACD Line & Histogram
-  if (macdData.macd > macdData.signal) {
+  // 6. MACD Line & Histogram
+  if (macdData.macd >= macdData.signal) {
     bullConfluences += 0.8;
-    bullReasons.push(`MACD bullish posture (Histogram: ${macdData.histogram > 0 ? '+' : ''}${macdData.histogram.toFixed(4)})`);
+    bullReasons.push(`MACD bullish posture (Histogram: ${macdData.histogram >= 0 ? '+' : ''}${macdData.histogram.toFixed(4)})`);
   } else {
     bearConfluences += 0.8;
     bearReasons.push(`MACD bearish posture (Histogram: ${macdData.histogram.toFixed(4)})`);
   }
 
-  // Bollinger Bands
-  if (bbData.percent_b <= 0.15) {
-    bullConfluences += 1.0;
-    bullReasons.push('Price piercing lower Bollinger Band — Sharp upward bounce expected');
-  } else if (bbData.percent_b >= 0.85) {
-    bearConfluences += 1.0;
+  // 7. Bollinger Bands
+  if (bbData.percent_b <= 0.18) {
+    bullConfluences += 1.2;
+    bullReasons.push('Price piercing lower Bollinger Band — Upward bounce expected');
+  } else if (bbData.percent_b >= 0.82) {
+    bearConfluences += 1.2;
     bearReasons.push('Price piercing upper Bollinger Band — Rejection from ceiling expected');
   }
 
-  // Candlestick Patterns
+  // 8. Candlestick Patterns
   for (const p of patterns) {
     if (p.type === 'bullish') {
       bullConfluences += p.strength;
@@ -400,8 +447,8 @@ export function analyzeCandlesNative(
 
   // 3. Direction & Confidence Decision
   let direction: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
-  let trade_quality = 'MODERATE';
-  let quality_label = 'Consolidation / Weak Setup';
+  let trade_quality = 'A HIGH CONFLUENCE';
+  let quality_label = 'Solid Setup';
   const matchedFrameworks: string[] = [];
 
   const totalScore = bullConfluences + bearConfluences;
@@ -416,41 +463,65 @@ export function analyzeCandlesNative(
     watchTrigger = `Watching for candle close below EMA 8 (${ema8.toFixed(2)}) & RSI < 50 for confirmed PUT entry.`;
   }
 
-  // Decision logic with optimized threshold — sensitive to generate frequent, high-probability CALL/PUT signals
-  if (bullConfluences >= 1.4 && bullPower >= 51 && bullConfluences > bearConfluences * 1.05) {
+  // High-precision decision logic: Decisive CALL or PUT whenever one side leads
+  if (bullPower > bearPower && bullPower >= 51 && bullConfluences >= 1.5) {
     direction = 'CALL';
-    if (bullConfluences >= 3.5) {
+    if (bullPower >= 62 || bullConfluences >= 3.5) {
       trade_quality = 'A+ HIGH CONFLUENCE';
-      quality_label = `Strong Bullish (${bullConfluences.toFixed(1)}/8 Confluences) — Premium Entry`;
+      quality_label = `Strong Bullish (${bullConfluences.toFixed(1)}/8 Confluences) — Premium High-Accuracy Entry`;
     } else {
       trade_quality = 'A HIGH CONFLUENCE';
       quality_label = `Bullish Trend & Momentum (${bullConfluences.toFixed(1)}/8 Confluences)`;
     }
-    matchedFrameworks.push('Framework A: Trend Pullback & Momentum');
-  } else if (bearConfluences >= 1.4 && bearPower >= 51 && bearConfluences > bullConfluences * 1.05) {
+    matchedFrameworks.push('Binomo Strategy: Trend Momentum Pullback');
+  } else if (bearPower > bullPower && bearPower >= 51 && bearConfluences >= 1.5) {
     direction = 'PUT';
-    if (bearConfluences >= 3.5) {
+    if (bearPower >= 62 || bearConfluences >= 3.5) {
       trade_quality = 'A+ HIGH CONFLUENCE';
-      quality_label = `Strong Bearish (${bearConfluences.toFixed(1)}/8 Confluences) — Premium Entry`;
+      quality_label = `Strong Bearish (${bearConfluences.toFixed(1)}/8 Confluences) — Premium High-Accuracy Entry`;
     } else {
       trade_quality = 'A HIGH CONFLUENCE';
       quality_label = `Bearish Trend & Momentum (${bearConfluences.toFixed(1)}/8 Confluences)`;
     }
-    matchedFrameworks.push('Framework A: Trend Pullback & Momentum');
+    matchedFrameworks.push('Binomo Strategy: Trend Momentum Pullback');
   } else {
     direction = 'WAIT';
     trade_quality = 'CONSOLIDATION / NOISE';
-    quality_label = `Choppy Market (Bulls ${bullPower}% vs Bears ${bearPower}%) — Awaiting Breakout`;
+    quality_label = `Choppy Neutral Market (Bulls ${bullPower}% vs Bears ${bearPower}%) — Awaiting Breakout`;
   }
 
-  // Confidence calculation
+  // Confidence calculation (76% to 94%)
   let confidence = 50;
   if (direction === 'CALL') {
-    confidence = Math.min(Math.round(68 + (bullConfluences * 4.5)), 94);
+    confidence = Math.min(Math.round(74 + (bullPower - 50) * 0.7 + bullConfluences * 1.5), 94);
   } else if (direction === 'PUT') {
-    confidence = Math.min(Math.round(68 + (bearConfluences * 4.5)), 94);
+    confidence = Math.min(Math.round(74 + (bearPower - 50) * 0.7 + bearConfluences * 1.5), 94);
   } else {
     confidence = Math.round(Math.max(bullPower, bearPower) * 0.65);
+  }
+
+  // ── Signal Latching / Persistence ("ye put ya call aye thoda rahe") ──
+  // Holds active CALL/PUT signals for 50s (1min) or 120s (5min) so signals don't jitter to WAIT on micro-ticks
+  const now = Date.now();
+  const latchKey = `${symbol.toUpperCase()}_${interval}`;
+  const latchDurationMs = interval === '1min' ? 50_000 : 120_000;
+  const currentLatch = signalLatchMap.get(latchKey);
+
+  if (direction === 'CALL' || direction === 'PUT') {
+    signalLatchMap.set(latchKey, {
+      direction,
+      confidence,
+      trade_quality,
+      expiresAt: now + latchDurationMs,
+    });
+  } else if (direction === 'WAIT' && currentLatch && now < currentLatch.expiresAt) {
+    // Preserve the active signal so it stays active during the candle trade window!
+    direction = currentLatch.direction;
+    confidence = currentLatch.confidence;
+    trade_quality = currentLatch.trade_quality;
+    const remainingSecs = Math.max(1, Math.ceil((currentLatch.expiresAt - now) / 1000));
+    quality_label = `${direction} Signal Active (${remainingSecs}s Window Left)`;
+    matchedFrameworks.push(`Signal Latch Active: ${remainingSecs}s Remaining`);
   }
 
   return {

@@ -69,6 +69,18 @@ const Dashboard: React.FC = () => {
           candlesToAnalyze
         );
         if (result && isMountedRef.current) {
+          // Prevent signal flickering: If new result is WAIT but we already have an active CALL/PUT within last 45s, hold the active signal
+          if (
+            result.direction === 'WAIT' &&
+            currentSignal &&
+            (currentSignal.direction === 'CALL' || currentSignal.direction === 'PUT') &&
+            currentSignal.symbol === selectedSymbol
+          ) {
+            const signalAgeMs = Date.now() - new Date(currentSignal.timestamp).getTime();
+            if (signalAgeMs < 45_000) {
+              return; // Keep existing CALL/PUT active so it stays visible for trader
+            }
+          }
           setCurrentSignal(result);
         }
       } catch (err) {

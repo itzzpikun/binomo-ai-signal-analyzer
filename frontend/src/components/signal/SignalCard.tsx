@@ -14,16 +14,19 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
   const [showBinomoModal, setShowBinomoModal] = useState<boolean>(false);
 
+  const intervalSecs =
+    signal?.interval === '1min' ? 60 : signal?.interval === '15min' ? 900 : 300;
+
   useEffect(() => {
     const updateCountdown = () => {
       const now = Math.floor(Date.now() / 1000);
-      const remaining = 300 - (now % 300); // 5 min interval
+      const remaining = intervalSecs - (now % intervalSecs);
       setSecondsRemaining(remaining);
     };
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [intervalSecs]);
 
   // Format mm:ss
   const formatTime = (secs: number) => {
@@ -32,10 +35,10 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Entry window logic: First 15 seconds of a 300s candle is when remaining is between 285 and 300
-  const isEntryWindowActive = secondsRemaining >= 285 && secondsRemaining <= 300;
-  // Prepare alert: Last 30 seconds of previous candle (remaining <= 30)
-  const isPrepareWindow = secondsRemaining <= 30;
+  // Entry window logic: First 15 seconds of candle open
+  const isEntryWindowActive = secondsRemaining >= (intervalSecs - 15) && secondsRemaining <= intervalSecs;
+  // Prepare alert: Last 15 seconds before next candle
+  const isPrepareWindow = secondsRemaining <= 15;
 
   if (isAnalyzing && !signal) {
     return (
@@ -278,7 +281,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[11px] font-mono mt-0.5">
           <div className="bg-gray-900/60 p-2 rounded-lg border border-gray-800/80">
             <span className="text-gray-500 block text-[10px]">Expiry:</span>
-            <span className="text-gray-200 font-bold text-xs">5 Min (Fixed)</span>
+            <span className="text-gray-200 font-bold text-xs">{signal?.interval ? `${signal.interval.toUpperCase()} (Fixed)` : '1 Min (Fixed)'}</span>
           </div>
           <div className="bg-gray-900/60 p-2 rounded-lg border border-gray-800/80">
             <span className="text-gray-500 block text-[10px]">Entry Moment:</span>
@@ -288,7 +291,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
 
         {/* Hindi Rule summary */}
         <p className="text-[11px] text-gray-400 italic bg-gray-900/30 p-2 rounded border border-gray-800/40">
-          💡 <b>Rule:</b> 5-minute candle ke open hote hi pehle 10-15 seconds me trade lein. Mid-candle (beech me) trade lene se bachein.
+          💡 <b>Rule:</b> {signal?.interval || '1-min'} candle ke open hote hi pehle 10-15 seconds me trade lein. Mid-candle me trade lene se bachein.
         </p>
       </div>
 
