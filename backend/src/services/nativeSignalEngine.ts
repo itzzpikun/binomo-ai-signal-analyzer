@@ -449,6 +449,9 @@ export function analyzeCandlesNative(
   }
 
   // 3. Direction & Confidence Decision
+  // User Rule: "wait rakho tabhi jab market unstable ho na ki har waqt"
+  // Keep WAIT ONLY when the market is genuinely unstable (flat ADX < 14, 50-50 deadband chop, or totalScore < 1.0)
+  // When market has momentum or trend, give decisive CALL or PUT!
   let direction: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
   let trade_quality = 'A HIGH CONFLUENCE';
   let quality_label = 'Solid Setup';
@@ -466,8 +469,16 @@ export function analyzeCandlesNative(
     watchTrigger = `Watching for candle close below EMA 8 (${ema8.toFixed(2)}) & RSI < 50 for confirmed PUT entry.`;
   }
 
-  // Decisive High-Precision Decision: Definite CALL or PUT (No deadband WAIT flickering)
-  if (bullPower >= bearPower) {
+  // Market Stability Check:
+  const isMarketUnstable = (adxData.adx < 14 && Math.abs(bullPower - bearPower) <= 8) || (totalScore < 1.0);
+
+  if (isMarketUnstable) {
+    // Only in truly unstable, directionless chop do we output WAIT
+    direction = 'WAIT';
+    trade_quality = 'UNSTABLE MARKET (CHOP)';
+    quality_label = 'Market Unstable / Rangebound — Wait for breakout confirmation';
+    matchedFrameworks.push('Market Volatility Guard: Sideways Chop Filter');
+  } else if (bullPower >= bearPower) {
     direction = 'CALL';
     if (bullPower >= 60 || bullConfluences >= 3.0) {
       trade_quality = 'A+ HIGH CONFLUENCE';
@@ -489,14 +500,14 @@ export function analyzeCandlesNative(
     matchedFrameworks.push('Binomo Strategy: Trend Momentum Pullback');
   }
 
-  // Confidence calculation (76% to 94%)
+  // Confidence calculation (76% to 94% for CALL/PUT; 35-45% for WAIT)
   let confidence = 50;
   if (direction === 'CALL') {
     confidence = Math.min(Math.round(74 + (bullPower - 50) * 0.7 + bullConfluences * 1.5), 94);
   } else if (direction === 'PUT') {
     confidence = Math.min(Math.round(74 + (bearPower - 50) * 0.7 + bearConfluences * 1.5), 94);
   } else {
-    confidence = Math.round(Math.max(bullPower, bearPower) * 0.65);
+    confidence = Math.round(38 + Math.abs(bullPower - bearPower));
   }
 
   // ── Candle-Slot Locking ("fluctuation ko bilkul khatam karo") ──
@@ -546,21 +557,27 @@ export function analyzeCandlesNative(
   const secondsRemaining = intervalSeconds - secondsElapsed;
   const isFirst15 = secondsElapsed <= 15;
 
-  const recommended_action = isFirst15
-    ? `🔥 PRIME ENTRY: Execute ${direction} on Binomo NOW (Open Window Active: ${15 - secondsElapsed}s remaining)!`
-    : `⏱️ Trade Active: ${direction} in progress (${secondsRemaining}s remaining until candle close).`;
+  const recommended_action = direction === 'WAIT'
+    ? '⚠️ MARKET UNSTABLE: Sideways chop detected. Do not trade now — wait for market stabilization.'
+    : (isFirst15
+      ? `🔥 PRIME ENTRY: Execute ${direction} on Binomo NOW (Open Window Active: ${15 - secondsElapsed}s remaining)!`
+      : `⏱️ Trade Active: ${direction} in progress (${secondsRemaining}s remaining until candle close).`);
 
   // AI Senior Arbiter & Predictive Model Output
   const gemini_arbiter = {
     status: 'active',
     provider: 'gemini',
-    approved: true,
+    approved: direction !== 'WAIT',
     direction,
     confidence,
-    trap_risk: direction === 'CALL' ? (rsiVal > 72 ? 'MEDIUM' : 'LOW') : (rsiVal < 28 ? 'MEDIUM' : 'LOW'),
-    analysis_en: `AI Predictive Arbiter confirmed ${direction} on ${symbol} (${interval}). Solid setup with ${confidence}% confidence across EMA 8/21 trend, ADX 5, and momentum.`,
-    analysis_hi: `AI Arbiter ne ${symbol} par ${direction} confirm kiya hai (${confidence}% Accuracy, ${trade_quality}). Agli candle open pe trade execute karein.`,
-    verdict: `AI Approved: ${direction} (${confidence}%)`,
+    trap_risk: direction === 'WAIT' ? 'HIGH' : (direction === 'CALL' ? (rsiVal > 72 ? 'MEDIUM' : 'LOW') : (rsiVal < 28 ? 'MEDIUM' : 'LOW')),
+    analysis_en: direction === 'WAIT'
+      ? `AI Arbiter detected unstable market conditions on ${symbol} (${interval}). Rangebound chop without directional momentum.`
+      : `AI Predictive Arbiter confirmed ${direction} on ${symbol} (${interval}). Solid setup with ${confidence}% confidence across EMA 8/21 trend, ADX 5, and momentum.`,
+    analysis_hi: direction === 'WAIT'
+      ? `Market abhi unstable / rangebound chop me hai. Clear breakout aane tak wait karein.`
+      : `AI Arbiter ne ${symbol} par ${direction} confirm kiya hai (${confidence}% Accuracy, ${trade_quality}). Agli candle open pe trade execute karein.`,
+    verdict: direction === 'WAIT' ? 'AI: Market Unstable (Wait)' : `AI Approved: ${direction} (${confidence}%)`,
   };
 
   return {

@@ -535,77 +535,63 @@ def generate_signal(
     else:
         pa_momentum = 0
 
-    # ── ULTRA-STRICT DECISION MATRIX (High Precision) ─────────────────────────
-    if is_dead_market:
+    # ── DECISION MATRIX (High Precision with Decisive Direction) ───────────────
+    # Rule: "wait rakho tabhi jab market unstable ho na ki har waqt"
+    is_market_unstable = is_dead_market or (has_strong_conflict and abs(weighted_sum) < 0.8 and abs(bull_confirmations - bear_confirmations) == 0)
+
+    if is_market_unstable:
         direction = "WAIT"
-        trade_quality = "DEAD MARKET"
-        quality_label = "Ultra-low volatility — Market flat, signals paused"
-        all_bear_reasons.append("⚠️ ATR below threshold — low volatility consolidation")
-    elif has_strong_conflict:
-        direction = "WAIT"
-        trade_quality = "CHOPPY / CONFLICTING"
-        quality_label = "Indicator Conflict — Wait for Breakout"
-        all_bear_reasons.append("⚠️ Conflicting signals: Trend vs Oscillator divergence")
+        trade_quality = "UNSTABLE MARKET (CHOP)"
+        quality_label = "Market Unstable / High Risk Chop — Wait for Breakout"
+        all_bear_reasons.append("⚠️ Market is consolidating in unstable sideways chop")
     elif (
-        (weighted_sum >= 2.0 and bull_confirmations >= 2 and trend_direction >= 0)
-        or (has_pullback_up and bull_confirmations >= 2)
-        or (has_sr_reversal_up and bull_confirmations >= 2)
+        (weighted_sum >= 1.0 and bull_confirmations >= 1 and trend_direction >= 0)
+        or (has_pullback_up and bull_confirmations >= 1)
+        or (has_sr_reversal_up and bull_confirmations >= 1)
+        or (bull_confirmations > bear_confirmations)
     ):
         direction = "CALL"
         trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bull_confirmations >= 3) else "A HIGH CONFLUENCE"
         framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
         quality_label = f"High-Probability Bullish ({bull_confirmations}/10 Confluences){framework_tag}"
     elif (
-        (weighted_sum <= -2.0 and bear_confirmations >= 2 and trend_direction <= 0)
-        or (has_pullback_down and bear_confirmations >= 2)
-        or (has_sr_reversal_down and bear_confirmations >= 2)
+        (weighted_sum <= -1.0 and bear_confirmations >= 1 and trend_direction <= 0)
+        or (has_pullback_down and bear_confirmations >= 1)
+        or (has_sr_reversal_down and bear_confirmations >= 1)
+        or (bear_confirmations > bull_confirmations)
     ):
         direction = "PUT"
         trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bear_confirmations >= 3) else "A HIGH CONFLUENCE"
         framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
         quality_label = f"High-Probability Bearish ({bear_confirmations}/10 Confluences){framework_tag}"
+    elif trend_direction >= 0:
+        direction = "CALL"
+        trade_quality = "A HIGH CONFLUENCE"
+        quality_label = f"Bullish Trend Following ({bull_confirmations}/10 Confluences)"
     else:
-        direction = "WAIT"
-        trade_quality = "INSUFFICIENT CONFLUENCE"
-        quality_label = "Consolidation / Weak Setup — Wait for clear confirmation"
+        direction = "PUT"
+        trade_quality = "A HIGH CONFLUENCE"
+        quality_label = f"Bearish Trend Following ({bear_confirmations}/10 Confluences)"
 
-    # ── COUNTER-TREND VETO ────────────────────────────────────────────────────
+    # ── CAUTION NOTICES (Warn without forcing permanent WAIT) ─────────────────
     if direction == "CALL" and trend_direction == -1 and not has_sr_reversal_up and not divergence_dict.get("bullish_divergence"):
-        direction = "WAIT"
-        trade_quality = "COUNTER-TREND BLOCKED"
-        quality_label = "Bullish signal blocked — Prevailing EMA trend is bearish"
-        all_bear_reasons.append("🚫 Counter-trend entry vetoed (Guide Rule: Do not trade against main trend)")
+        all_bear_reasons.append("⚠️ Caution: Trading against 1-min trend — ensure candle confirmation")
     elif direction == "PUT" and trend_direction == 1 and not has_sr_reversal_down and not divergence_dict.get("bearish_divergence"):
-        direction = "WAIT"
-        trade_quality = "COUNTER-TREND BLOCKED"
-        quality_label = "Bearish signal blocked — Prevailing EMA trend is bullish"
-        all_bull_reasons.append("🚫 Counter-trend entry vetoed (Guide Rule: Do not trade against main trend)")
+        all_bull_reasons.append("⚠️ Caution: Trading against 1-min trend — ensure candle confirmation")
 
-    # ── CONSECUTIVE RUN EXHAUSTION VETO ───────────────────────────────────────
+    # ── CONSECUTIVE RUN EXHAUSTION NOTICE ────────────────────────────────────
     if exhaustion_dict.get("exhaustion_risk"):
         if direction == "CALL" and exhaustion_dict.get("run_direction") == "GREEN":
-            direction = "WAIT"
-            trade_quality = "EXHAUSTION VETO"
-            quality_label = f"VETO: {exhaustion_dict['run_count']} consecutive green candles (Exhaustion risk)"
             all_bear_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
         elif direction == "PUT" and exhaustion_dict.get("run_direction") == "RED":
-            direction = "WAIT"
-            trade_quality = "EXHAUSTION VETO"
-            quality_label = f"VETO: {exhaustion_dict['run_count']} consecutive red candles (Exhaustion risk)"
             all_bull_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
 
-    # ── MACRO TREND VETO (EMA 50 / EMA 200) ──────────────────────────────────
+    # ── MACRO TREND NOTICE (EMA 50 / EMA 200) ────────────────────────────────
     macro_dir = macro_trend_dict.get("trend", "NEUTRAL")
     if macro_dir == "STRONG_BEARISH" and direction == "CALL" and not divergence_dict.get("bullish_divergence"):
-        direction = "WAIT"
-        trade_quality = "MACRO DOWNTREND VETO"
-        quality_label = "VETO: Higher-timeframe macro trend is strongly bearish"
-        all_bear_reasons.append("🚫 Macro Trend Veto: Price < EMA 50 < EMA 200 (Do not buy into macro downtrend)")
+        all_bear_reasons.append("⚠️ Macro Downtrend Note: Price < EMA 50 < EMA 200")
     elif macro_dir == "STRONG_BULLISH" and direction == "PUT" and not divergence_dict.get("bearish_divergence"):
-        direction = "WAIT"
-        trade_quality = "MACRO UPTREND VETO"
-        quality_label = "VETO: Higher-timeframe macro trend is strongly bullish"
-        all_bull_reasons.append("🚫 Macro Trend Veto: Price > EMA 50 > EMA 200 (Do not sell into macro uptrend)")
+        all_bull_reasons.append("⚠️ Macro Uptrend Note: Price > EMA 50 > EMA 200")
 
     # ── Confidence Score Calculation ──────────────────────────────────────────
     confluence_count = max(bull_confirmations, bear_confirmations)
@@ -706,13 +692,18 @@ def generate_signal(
         if probable_bias == "CALL"
         else f"Watching for price rejection below EMA 8/21 ({ema8:.2f}) & RSI < 50 for confirmed PUT entry."
     )
+    setup_summary = (
+        f"Strong {direction} momentum active ({bias_pct}%). {watch_trigger}"
+        if direction != "WAIT"
+        else f"Market unstable / consolidating ({bias_pct}% {probable_bias} balance). {watch_trigger}"
+    )
     next_probable_setup = {
         "bias": probable_bias,
         "biasPercentage": bias_pct,
         "bullishPower": bull_pct,
         "bearishPower": bear_pct,
         "watchTrigger": watch_trigger,
-        "setupSummary": f"Market is leaning {probable_bias} ({bias_pct}%). {watch_trigger}",
+        "setupSummary": setup_summary,
     }
 
     return {

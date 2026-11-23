@@ -45,17 +45,24 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
     const now = Date.now();
     const confirmedCandidates: TripleConfirmedAlert[] = [];
 
+    const effCurrentDir: ('CALL' | 'PUT' | null) =
+      (currentSignal?.direction === 'CALL' || currentSignal?.direction === 'PUT')
+        ? currentSignal.direction
+        : (currentSignal?.next_probable_setup?.bias === 'CALL' || currentSignal?.next_probable_setup?.bias === 'PUT'
+          ? (currentSignal.next_probable_setup.bias as 'CALL' | 'PUT')
+          : null);
+
     // 1. Current viewed asset (check if 1m, 5m, 15m all match)
     if (
       currentSignal &&
-      (currentSignal.direction === 'CALL' || currentSignal.direction === 'PUT') &&
+      effCurrentDir &&
       (currentSignal as any)?.timeframe_alignment?.isTripleConfirmed
     ) {
       const ageMs = now - new Date(currentSignal.timestamp).getTime();
       if (ageMs < 30_000) {
         confirmedCandidates.push({
           symbol: currentSignal.symbol,
-          direction: currentSignal.direction,
+          direction: effCurrentDir,
           confidence: currentSignal.confidence,
           timestamp: currentSignal.timestamp,
           isCurrent: true,

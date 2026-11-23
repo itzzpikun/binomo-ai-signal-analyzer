@@ -48,12 +48,25 @@ export const signalController = {
       );
 
       const rawResult: any = result || {};
+      let resolvedDirection = rawResult.direction || rawResult.signal?.direction || 'WAIT';
+      const conf = typeof rawResult.confidence === 'number'
+        ? rawResult.confidence
+        : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50);
+
+      // User Rule: "wait rakho tabhi jab market unstable ho na ki har waqt"
+      if (resolvedDirection === 'WAIT') {
+        const bias = rawResult.next_probable_setup?.bias;
+        const biasPct = rawResult.next_probable_setup?.biasPercentage || 50;
+        const isActuallyUnstable = conf < 55 && biasPct < 58;
+        if (!isActuallyUnstable && (bias === 'CALL' || bias === 'PUT')) {
+          resolvedDirection = bias;
+        }
+      }
+
       const finalSignal: any = {
         ...rawResult,
-        direction: rawResult.direction || rawResult.signal?.direction || 'WAIT',
-        confidence: typeof rawResult.confidence === 'number'
-          ? rawResult.confidence
-          : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50),
+        direction: resolvedDirection,
+        confidence: conf,
         indicators: rawResult.indicators || rawResult.signal?.indicators || {},
         reasons: rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] },
         next_probable_setup: rawResult.next_probable_setup,

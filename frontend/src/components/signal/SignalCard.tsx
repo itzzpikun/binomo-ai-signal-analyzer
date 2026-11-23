@@ -69,7 +69,6 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
     );
   }
 
-  const isWait = signal.direction === 'WAIT';
   const probableSetup = signal.next_probable_setup;
   const probableBias = probableSetup?.bias || (signal.confidence > 50 ? 'CALL' : 'PUT');
   const probablePct = probableSetup?.biasPercentage || 60;
@@ -80,6 +79,17 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       ? 'Awaiting candle close above EMA 8/21 dynamic support for CALL confirmation.'
       : 'Awaiting candle close below EMA 8/21 dynamic resistance for PUT confirmation.'
   );
+
+  // User Rule: "wait rakho tabhi jab market unstable ho na ki har waqt"
+  // Keep WAIT only when the market is genuinely unstable (e.g. low confidence or 50/50 chop)
+  // If direction is WAIT but market has a strong directional leaning (bias >= 58% or confidence >= 60),
+  // promote to active CALL or PUT so the user isn't stuck waiting.
+  const isMarketUnstable = signal.direction === 'WAIT' && (signal.confidence < 60 || Math.abs(bullPower - bearPower) <= 8);
+  const effectiveDirection: 'CALL' | 'PUT' | 'WAIT' = isMarketUnstable
+    ? 'WAIT'
+    : (signal.direction === 'CALL' || signal.direction === 'PUT' ? signal.direction : (probableBias || 'CALL'));
+
+  const isWait = effectiveDirection === 'WAIT';
 
   const directionConfig = {
     CALL: {
@@ -110,14 +120,14 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
       text: 'text-amber-400',
       glow: 'shadow-amber-500/10',
-      icon: '⏸',
-      label: `WAIT (Leaning ${probableBias})`,
-      sublabel: `${probablePct}% ${probableBias} Setup Forming`,
-      actionPrompt: 'Wait for next high-probability setup',
+      icon: '⚠️',
+      label: 'WAIT (MARKET UNSTABLE)',
+      sublabel: 'Consolidation / High Chop Risk — Awaiting Clean Breakout',
+      actionPrompt: 'Market is unstable. Wait for clean breakout',
     },
   };
 
-  const config = directionConfig[signal.direction] || directionConfig.WAIT;
+  const config = directionConfig[effectiveDirection] || directionConfig.WAIT;
   const quality = signal.trade_quality || (signal.confidence > 75 ? 'A+ HIGH CONFLUENCE' : 'MODERATE');
 
   return (
@@ -248,7 +258,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
                 ACTIVE ENTRY WINDOW NOW!
               </span>
               <p className="text-emerald-200/90 text-[11px] mt-0.5">
-                New 5M candle has opened. Execute <b>{signal.direction}</b> on Binomo within next 15 seconds!
+                New candle has opened. Execute <b>{effectiveDirection}</b> on Binomo within next 15 seconds!
               </p>
             </div>
           </div>
@@ -262,7 +272,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
                 GET READY ON BINOMO! (In {formatTime(secondsRemaining)})
               </span>
               <p className="text-amber-200/90 text-[11px] mt-0.5">
-                Next candle opens in {secondsRemaining}s. Set 5M expiry and be ready to press {signal.direction}!
+                Next candle opens in {secondsRemaining}s. Set expiry and be ready to press {effectiveDirection}!
               </p>
             </div>
           </div>
@@ -281,8 +291,8 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
           <div className="bg-gray-900/90 border border-amber-500/40 rounded-xl p-3 flex flex-col gap-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
-                <span>⏸️</span>
-                <span>NO TRADE NOW (Consolidation / Noise)</span>
+                <span>⚠️</span>
+                <span>MARKET UNSTABLE (High Chop / Sideways Range)</span>
               </span>
               <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                 probableBias === 'CALL'
@@ -423,7 +433,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
 
       {/* Model Confidence Meter */}
       <div className="w-full">
-        <ConfidenceBar confidence={signal.confidence} direction={signal.direction} />
+        <ConfidenceBar confidence={signal.confidence} direction={effectiveDirection} />
       </div>
 
       {/* Timestamp */}
@@ -453,12 +463,12 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
             <div className="space-y-3 text-xs text-gray-300 leading-relaxed">
               <div className="bg-gray-950 p-3 rounded-xl border border-gray-800">
                 <p className="font-semibold text-yellow-400 mb-1">1. Open Asset on Binomo</p>
-                <p>Select <b>{signal.symbol}</b> on Binomo. Switch chart timeframe to <b>5 Minutes (5M)</b>.</p>
+                <p>Select <b>{signal.symbol}</b> on Binomo. Switch chart timeframe to <b>{signal.interval || '1M'}</b>.</p>
               </div>
 
               <div className="bg-gray-950 p-3 rounded-xl border border-gray-800">
                 <p className="font-semibold text-yellow-400 mb-1">2. Timing Is Crucial (कब Trade Lein)</p>
-                <p>Never take a trade mid-candle! Watch the timer: wait until the 5-minute candle starts, and click <b>{signal.direction}</b> within the first 10-15 seconds.</p>
+                <p>Never take a trade mid-candle! Watch the timer: wait until the candle starts, and click <b>{effectiveDirection !== 'WAIT' ? effectiveDirection : 'CALL/PUT on Breakout'}</b> within the first 10-15 seconds.</p>
               </div>
 
               <div className="bg-gray-950 p-3 rounded-xl border border-gray-800">
