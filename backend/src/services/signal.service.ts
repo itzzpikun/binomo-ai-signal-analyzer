@@ -70,14 +70,16 @@ export const signalService = {
         const aiEval = await aiProviderService.evaluateMarketSetup({
           symbol,
           interval,
+          technicalDirection: nativeResult.direction,
+          technicalScore: nativeResult.confidence,
           candles,
           indicators: {
             rsi: nativeResult.indicators?.rsi?.value ?? 50,
-            ema8: nativeResult.indicators?.ema?.ema8 ?? 0,
+            ema8: nativeResult.indicators?.ema?.ema9 ?? 0,
             ema21: nativeResult.indicators?.ema?.ema21 ?? 0,
             adx: nativeResult.indicators?.adx?.adx ?? 20,
             macdHist: nativeResult.indicators?.macd?.histogram ?? 0,
-            ao: nativeResult.indicators?.awesome_oscillator?.ao ?? 0,
+            ao: 0,
             bullPower: nativeResult.next_probable_setup?.bullishPower ?? 50,
             bearPower: nativeResult.next_probable_setup?.bearishPower ?? 50,
           },
@@ -92,11 +94,24 @@ export const signalService = {
             analysis_en: aiEval.analysis_en,
             analysis_hi: aiEval.analysis_hi,
             verdict: aiEval.verdict,
+            contradiction_detected: aiEval.contradiction_detected,
+            models: aiEval.models,
           };
-          if (aiEval.confidence >= 75) {
+
+          if (aiEval.contradiction_detected) {
+            nativeResult.direction = 'WAIT';
+            nativeResult.trade_quality = 'AI_CONTRADICTION_REJECTED';
+            nativeResult.reasons.wait_reasons = [
+              ...(nativeResult.reasons.wait_reasons || []),
+              aiEval.analysis_en,
+            ];
+          } else if (aiEval.direction === 'WAIT') {
+            nativeResult.direction = 'WAIT';
+            nativeResult.trade_quality = 'AI_ARBITER_WAIT';
+          } else if (aiEval.confidence >= 75) {
             nativeResult.confidence = aiEval.confidence;
             nativeResult.direction = aiEval.direction;
-            nativeResult.trade_quality = `HIGH ACCURACY (≥75% CONFIRMED - ${aiEval.provider})`;
+            nativeResult.trade_quality = `AI_CONFIRMED (${aiEval.provider})`;
           }
         }
       } catch (e) {

@@ -234,6 +234,18 @@ export function generateLiveBinomoCandles(
   return candles;
 }
 
+export interface CandleValidationReport {
+  isValid: boolean;
+  isOtc: boolean;
+  isStale: boolean;
+  totalCandles: number;
+  duplicateCount: number;
+  invalidOhlcCount: number;
+  latencyMs: number;
+  lastCandleTime: string | null;
+  message: string;
+}
+
 export const marketDataService = {
   getSupportedAssets(): AssetCategory[] {
     return SUPPORTED_ASSETS;
@@ -241,6 +253,78 @@ export const marketDataService = {
 
   getAssetsList(): BinomoAssetSpec[] {
     return BINOMO_ASSETS_LIST;
+  },
+
+  validateCandles(candles: OHLCCandle[], symbol: string, interval = '1min'): CandleValidationReport {
+    const isOtc = symbol.toUpperCase().includes('(OTC)') || symbol.toUpperCase().includes('CRYPTO IDX');
+    if (!candles || candles.length === 0) {
+      return {
+        isValid: false,
+        isOtc,
+        isStale: true,
+        totalCandles: 0,
+        duplicateCount: 0,
+        invalidOhlcCount: 0,
+        latencyMs: 9999,
+        lastCandleTime: null,
+        message: 'No candle data available',
+      };
+    }
+
+    let duplicateCount = 0;
+    let invalidOhlcCount = 0;
+    const seenTimes = new Set<string>();
+
+    for (const c of candles) {
+      if (seenTimes.has(c.timestamp)) {
+        duplicateCount++;
+      }
+      seenTimes.add(c.timestamp);
+
+      // Validate OHLC bounds
+      if (
+        typeof c.open !== 'number' ||
+        typeof c.high !== 'number' ||
+        typeof c.low !== 'number' ||
+        typeof c.close !== 'number' ||
+        isNaN(c.open) ||
+        isNaN(c.high) ||
+        isNaN(c.low) ||
+        isNaN(c.close) ||
+        c.open <= 0 ||
+        c.close <= 0 ||
+        c.low <= 0 ||
+        c.high < c.low
+      ) {
+        invalidOhlcCount++;
+      }
+    }
+
+    const lastCandle = candles[candles.length - 1];
+    const lastTimeMs = new Date(lastCandle.timestamp).getTime();
+    const nowMs = Date.now();
+    const ageMs = Math.max(0, nowMs - lastTimeMs);
+
+    const intervalSec = interval === '1min' ? 60 : interval === '15min' ? 900 : 300;
+    const isStale = ageMs > (intervalSec * 3 * 1000);
+
+    const isValid = invalidOhlcCount === 0 && candles.length >= 10 && !isStale;
+
+    return {
+      isValid,
+      isOtc,
+      isStale,
+      totalCandles: candles.length,
+      duplicateCount,
+      invalidOhlcCount,
+      latencyMs: ageMs,
+      lastCandleTime: lastCandle.timestamp,
+      message: isValid
+        ? `Feed Valid: ${candles.length} candles (${isOtc ? 'Binomo OTC Liquidity' : 'Standard Market'})`
+        : isStale
+        ? `Feed Stale: Last update was ${Math.round(ageMs / 1000)}s ago`
+        : `Invalid Feed: ${invalidOhlcCount} corrupted candles detected`,
+    };
   },
 
   validateInterval(interval: string): void {

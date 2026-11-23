@@ -51,68 +51,100 @@ export const signalController = {
         (req.body as any).openrouter_api_key ||
         process.env.OPENROUTER_API_KEY;
 
-      const result = await signalService.analyzeCandles(
-        symbol,
-        interval,
-        sanitizedCandles,
-        { geminiKey, openaiKey, groqKey, deepseekKey, openrouterKey }
-      );
+      // 1. Real-time data feed validation (Section 7)
+      const marketDataService = (await import('../services/marketData.service')).default;
+      const validationReport = marketDataService.validateCandles(sanitizedCandles, symbol, interval);
 
-      const rawResult: any = result || {};
-      let resolvedDirection = rawResult.direction || rawResult.signal?.direction || 'WAIT';
-      let conf = typeof rawResult.confidence === 'number'
-        ? rawResult.confidence
-        : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50);
-
-      const finalSignal: any = {
-        ...rawResult,
-        direction: resolvedDirection,
-        confidence: conf,
-        indicators: rawResult.indicators || rawResult.signal?.indicators || {},
-        reasons: rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] },
-        next_probable_setup: rawResult.next_probable_setup,
-      };
-
-      // Multi-Timeframe Alignment Check (1m, 5m, 15m)
+      // 2. Multi-Timeframe Confirmation (1M, 5M, 15M) (Section 2)
+      let s5mDir: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
+      let s15mDir: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
       try {
-        const marketDataService = (await import('../services/marketData.service')).default;
-        const { analyzeCandlesNative } = await import('../services/nativeSignalEngine');
-        const [c1m, c5m, c15m] = await Promise.all([
-          marketDataService.getCandles(symbol, '1min', 40),
+        const [c5m, c15m] = await Promise.all([
           marketDataService.getCandles(symbol, '5min', 40),
           marketDataService.getCandles(symbol, '15min', 40),
         ]);
-        const s1m = analyzeCandlesNative(c1m, symbol, '1min');
+        const { analyzeCandlesNative } = await import('../services/nativeSignalEngine');
         const s5m = analyzeCandlesNative(c5m, symbol, '5min');
         const s15m = analyzeCandlesNative(c15m, symbol, '15min');
-
-        const allMatch = (s1m.direction === s5m.direction && s5m.direction === s15m.direction);
-        const isTripleMatch = allMatch && (s1m.direction === 'CALL' || s1m.direction === 'PUT');
-
-        finalSignal.timeframe_alignment = {
-          '1m': s1m.direction,
-          '5m': s5m.direction,
-          '15m': s15m.direction,
-          isTripleConfirmed: isTripleMatch,
-          confirmedDirection: isTripleMatch ? s1m.direction : null,
-        };
-
-        // User Rule: "after 75% model confidence show signal put or call otherwise wait"
-        // Triple alignment gives an extra confluence bonus, but is not mandatory
-        if (isTripleMatch) {
-          finalSignal.confidence = Math.max(conf, 90);
-          finalSignal.direction = s1m.direction;
-          finalSignal.trade_quality = 'A+ 90%+ ACCURACY CONFIRMED';
-        } else if (finalSignal.confidence >= 75) {
-          if (finalSignal.direction !== 'CALL' && finalSignal.direction !== 'PUT') {
-            finalSignal.direction = rawResult.next_probable_setup?.bias || 'CALL';
-          }
-          finalSignal.trade_quality = 'HIGH ACCURACY (≥75% CONFIRMED)';
-        } else {
-          finalSignal.direction = 'WAIT';
-          finalSignal.trade_quality = 'AWAITING 75% CONFLUENCE';
-        }
+        s5mDir = s5m.direction;
+        s15mDir = s15m.direction;
       } catch {}
+
+      // 3. Quantitative 100-Point Scoring Engine (Section 4)
+      const { analyzeCandlesNative } = await import('../services/nativeSignalEngine');
+      const nativeSignal = analyzeCandlesNative(sanitizedCandles, symbol, interval, {
+        s5mDirection: s5mDir,
+        s15mDirection: s15mDir,
+      });
+
+      const finalSignal: any = {
+        ...nativeSignal,
+        data_quality: validationReport,
+        timeframe_alignment: {
+          '1m': nativeSignal.direction === 'WAIT' ? nativeSignal.next_probable_setup.bias : nativeSignal.direction,
+          '5m': s5mDir,
+          '15m': s15mDir,
+          isAligned: s5mDir === s15mDir && s5mDir !== 'WAIT',
+          conflictDetected: (s5mDir === 'CALL' && s15mDir === 'PUT') || (s5mDir === 'PUT' && s15mDir === 'CALL'),
+        },
+      };
+
+      // If feed is stale or corrupted: strictly WAIT (Section 7)
+      if (!validationReport.isValid) {
+        finalSignal.direction = 'WAIT';
+        finalSignal.trade_quality = validationReport.message;
+        finalSignal.reasons.wait_reasons = [validationReport.message];
+      }
+
+      // 4. Smart AI Ensemble (Section 3)
+      if (geminiKey || openaiKey || groqKey || deepseekKey || openrouterKey) {
+        try {
+          const { aiProviderService } = await import('../services/aiProvider.service');
+          const aiEval = await aiProviderService.evaluateMarketSetup({
+            symbol,
+            interval,
+            technicalDirection: finalSignal.direction,
+            technicalScore: finalSignal.confidence,
+            candles: sanitizedCandles,
+            indicators: {
+              rsi: finalSignal.indicators?.rsi?.value ?? 50,
+              ema8: finalSignal.indicators?.ema?.ema9 ?? 0,
+              ema21: finalSignal.indicators?.ema?.ema21 ?? 0,
+              adx: finalSignal.indicators?.adx?.adx ?? 20,
+              macdHist: finalSignal.indicators?.macd?.histogram ?? 0,
+              ao: 0,
+              bullPower: finalSignal.next_probable_setup?.bullishPower ?? 50,
+              bearPower: finalSignal.next_probable_setup?.bearishPower ?? 50,
+            },
+            keys: { geminiKey, openaiKey, groqKey, deepseekKey, openrouterKey },
+          });
+
+          if (aiEval) {
+            finalSignal.gemini_arbiter = {
+              provider: aiEval.provider,
+              trap_risk: aiEval.trap_risk,
+              analysis_en: aiEval.analysis_en,
+              analysis_hi: aiEval.analysis_hi,
+              verdict: aiEval.verdict,
+              contradiction_detected: aiEval.contradiction_detected,
+              models: aiEval.models,
+            };
+
+            // Reject contradictory predictions (Section 3)
+            if (aiEval.contradiction_detected) {
+              finalSignal.direction = 'WAIT';
+              finalSignal.trade_quality = 'AI_CONTRADICTION_REJECTED';
+              finalSignal.reasons.wait_reasons = [
+                ...(finalSignal.reasons.wait_reasons || []),
+                aiEval.analysis_en,
+              ];
+            } else if (aiEval.direction === 'WAIT') {
+              finalSignal.direction = 'WAIT';
+              finalSignal.trade_quality = 'AI_ARBITER_WAIT';
+            }
+          }
+        } catch {}
+      }
 
       const saved = await signalService.saveSignal(symbol, interval, finalSignal);
       res.status(200).json({

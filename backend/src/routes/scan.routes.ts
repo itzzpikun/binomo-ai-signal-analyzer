@@ -29,75 +29,37 @@ router.get('/all', analysisRateLimiter, async (_req: Request, res: Response) => 
 
         if (c1m.length < 5 || c5m.length < 5 || c15m.length < 5) return null;
 
-        const sig1m = analyzeCandlesNative(c1m, symbol, '1min');
         const sig5m = analyzeCandlesNative(c5m, symbol, '5min');
         const sig15m = analyzeCandlesNative(c15m, symbol, '15min');
+        const sig1m = analyzeCandlesNative(c1m, symbol, '1min', {
+          s5mDirection: sig5m.direction,
+          s15mDirection: sig15m.direction,
+        });
 
-        const isAllCall =
-          sig1m.direction === 'CALL' &&
-          sig5m.direction === 'CALL' &&
-          sig15m.direction === 'CALL';
-
-        const isAllPut =
-          sig1m.direction === 'PUT' &&
-          sig5m.direction === 'PUT' &&
-          sig15m.direction === 'PUT';
-
-        let confirmedDirection: 'CALL' | 'PUT' | null = null;
-        if (sig1m.direction === 'CALL' || sig1m.direction === 'PUT') {
-          confirmedDirection = sig1m.direction;
-        } else if (sig1m.confidence >= 75 && sig1m.next_probable_setup?.bias) {
-          confirmedDirection = sig1m.next_probable_setup.bias;
-        }
-
-        let confirmedConfidence = sig1m.confidence;
-        if (isAllCall || isAllPut) {
-          confirmedConfidence = Math.max(confirmedConfidence, 90);
-        }
-
-        // Filter: Must have decisive CALL/PUT and confidence >= 75%
-        if (!confirmedDirection || confirmedConfidence < 75) {
+        // Strict Policy: Only assets that qualify for CALL or PUT (score >= 75 and no filter triggered)
+        if (sig1m.direction !== 'CALL' && sig1m.direction !== 'PUT') {
           return null;
         }
 
+        const isAllCall = sig1m.direction === 'CALL' && sig5m.direction === 'CALL' && sig15m.direction === 'CALL';
+        const isAllPut = sig1m.direction === 'PUT' && sig5m.direction === 'PUT' && sig15m.direction === 'PUT';
+
         return {
           symbol,
-          direction: confirmedDirection,
-          confidence: confirmedConfidence,
-          trade_quality: confirmedConfidence >= 90 ? 'A+ 90%+ ACCURACY CONFIRMED' : 'HIGH ACCURACY (≥75% CONFIRMED)',
+          direction: sig1m.direction,
+          confidence: sig1m.confidence,
+          trade_quality: sig1m.trade_quality,
+          score_breakdown: sig1m.score_breakdown,
+          market_regime: sig1m.market_regime,
           timeframes: {
             '1m': sig1m.direction,
             '5m': sig5m.direction,
             '15m': sig15m.direction,
           },
           gemini_arbiter: sig1m.gemini_arbiter,
-          entry_timing: {
-            ...sig1m.entry_timing,
-            quality_tier: confirmedConfidence >= 90 ? 'A+ 90%+ ACCURACY CONFIRMED' : 'HIGH ACCURACY (≥75% CONFIRMED)',
-            quality_label: `Model Confidence: ${confirmedConfidence}% — Verified ${confirmedDirection} Entry`,
-            matched_frameworks: [
-              'Multi-AI Consensus (Gemini + Groq + Tech Engine)',
-              'Binomo High Accuracy Entry Strategy',
-              ...(isAllCall || isAllPut ? ['Multi-Timeframe Trend Alignment'] : []),
-            ],
-          },
+          entry_timing: sig1m.entry_timing,
           next_probable_setup: sig1m.next_probable_setup,
-          reasons: {
-            bullish: isAllCall
-              ? [
-                  '1-Minute Momentum: Bullish impulse confirmed',
-                  '5-Minute Trend: EMA 8/21 golden alignment confirmed',
-                  '15-Minute Macro: Major trend fully aligned Bullish',
-                ]
-              : [],
-            bearish: isAllPut
-              ? [
-                  '1-Minute Momentum: Bearish breakdown confirmed',
-                  '5-Minute Trend: EMA 8/21 downward trend confirmed',
-                  '15-Minute Macro: Major trend fully aligned Bearish',
-                ]
-              : [],
-          },
+          reasons: sig1m.reasons,
           timestamp: new Date().toISOString(),
         };
       } catch {

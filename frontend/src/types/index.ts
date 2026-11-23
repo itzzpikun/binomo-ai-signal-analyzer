@@ -85,6 +85,15 @@ export interface Signal {
   trade_quality?: string;
   entry_timing?: EntryTiming;
   confluence_score?: number;
+  score_breakdown?: {
+    trendScore: number;
+    momentumScore: number;
+    priceActionScore: number;
+    mtfScore: number;
+    volatilityScore: number;
+    totalScore: number;
+  };
+  market_regime?: 'TRENDING' | 'RANGING' | 'VOLATILE';
   next_probable_setup?: NextProbableSetup;
   gemini_arbiter?: GeminiArbiterResult;
 }

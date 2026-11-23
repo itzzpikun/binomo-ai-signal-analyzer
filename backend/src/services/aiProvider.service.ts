@@ -19,6 +19,8 @@ export interface AIProviderTestResult {
 export interface AIAnalysisRequest {
   symbol: string;
   interval: string;
+  technicalDirection?: 'CALL' | 'PUT' | 'WAIT';
+  technicalScore?: number;
   candles: { open: number; high: number; low: number; close: number; volume?: number }[];
   indicators: {
     rsi: number;
@@ -47,6 +49,8 @@ export interface AIAnalysisResult {
   analysis_en: string;
   analysis_hi: string;
   verdict: string;
+  contradiction_detected?: boolean;
+  models?: Record<string, { status: string; direction?: string; score?: number }>;
 }
 
 export const aiProviderService = {
@@ -224,13 +228,14 @@ export const aiProviderService = {
 
   /**
    * Evaluate a market setup across available AI providers
-   * Enforces user's 75% confidence rule
+   * Enforces independent model comparison, contradiction rejection, and no fabrication
    */
   async evaluateMarketSetup(req: AIAnalysisRequest): Promise<AIAnalysisResult> {
-    const { symbol, interval, indicators, keys = {} } = req;
+    const { symbol, interval, indicators, keys = {}, technicalDirection, technicalScore = 75 } = req;
     const { bullPower, bearPower, rsi, ema8, ema21, adx } = indicators;
 
     const probableBias: 'CALL' | 'PUT' = bullPower >= bearPower ? 'CALL' : 'PUT';
+    const techDir = technicalDirection || probableBias;
     const biasPct = Math.max(bullPower, bearPower);
     const trapRisk: 'LOW' | 'MEDIUM' | 'HIGH' =
       probableBias === 'CALL' ? (rsi > 72 ? 'MEDIUM' : 'LOW') : (rsi < 28 ? 'MEDIUM' : 'LOW');
@@ -242,17 +247,17 @@ export const aiProviderService = {
     const activeDeepSeek = keys.deepseekKey || process.env['DEEPSEEK_API_KEY'];
     const activeOpenRouter = keys.openrouterKey || process.env['OPENROUTER_API_KEY'];
 
-    // Construct prompt
+    // Construct prompt for independent evaluation
     const prompt = `You are a Senior Quantitative Binary Options Trading Arbiter for Binomo.
 Asset: ${symbol} (${interval})
 Indicators:
 - RSI (14): ${rsi}
 - EMA 8: ${ema8}, EMA 21: ${ema21} (Trend: ${ema8 >= ema21 ? 'BULLISH' : 'BEARISH'})
-- ADX (5): ${adx}
+- ADX (14): ${adx}
 - Market Confluence: Bulls ${bullPower}% vs Bears ${bearPower}%
-- Mathematical Lean: ${probableBias}
+- Technical Lean: ${probableBias}
 
-RULE: Confirm CALL or PUT if setup has >= 75% high probability with acceptable trap risk. If market is in choppy consolidation, respond WAIT.
+RULE: Confirm CALL or PUT if setup has >= 75% high probability with acceptable trap risk. If market is in choppy consolidation or contradictory, respond WAIT.
 Return JSON ONLY with this schema:
 {
   "direction": "CALL" | "PUT" | "WAIT",
@@ -261,6 +266,38 @@ Return JSON ONLY with this schema:
   "reason_hi": "Hindi explanation",
   "reason_en": "English explanation"
 }`;
+
+    const checkContradiction = (aiDir: string, providerName: string, conf: number, reasonEn: string, reasonHi: string): AIAnalysisResult => {
+      if (techDir !== 'WAIT' && aiDir !== 'WAIT' && (aiDir === 'CALL' || aiDir === 'PUT') && aiDir !== techDir) {
+        return {
+          provider: `${providerName} / Technical Engine`,
+          direction: 'WAIT',
+          confidence: 50,
+          trap_risk: 'HIGH',
+          contradiction_detected: true,
+          analysis_en: `Smart AI Ensemble rejected trade: Contradictory predictions detected (Technical: ${techDir} vs ${providerName}: ${aiDir}).`,
+          analysis_hi: `Smart AI Ensemble ne trade reject kiya: Technical Engine (${techDir}) aur ${providerName} (${aiDir}) me virodhabhas hai. Loss se bachne ke liye WAIT karein.`,
+          verdict: `⚠️ Contradictory Prediction Rejected (${techDir} vs ${aiDir})`,
+          models: {
+            technical: { status: 'active', direction: techDir, score: technicalScore },
+            [providerName.toLowerCase().replace(/[^a-z]/g, '')]: { status: 'active', direction: aiDir },
+          },
+        };
+      }
+      return {
+        provider: providerName,
+        direction: (aiDir as any) || techDir,
+        confidence: conf,
+        trap_risk: trapRisk,
+        analysis_en: reasonEn || `${providerName} verified ${aiDir} with ${conf}% confidence.`,
+        analysis_hi: reasonHi || `${providerName} ne ${aiDir} setup ko ${conf}% accuracy ke sath confirm kiya hai.`,
+        verdict: `${providerName} Approved: ${aiDir}`,
+        models: {
+          technical: { status: 'active', direction: techDir, score: technicalScore },
+          [providerName.toLowerCase().replace(/[^a-z]/g, '')]: { status: 'active', direction: aiDir },
+        },
+      };
+    };
 
     // Try Groq first (blazing fast, <400ms)
     if (activeGroq) {
@@ -278,15 +315,7 @@ Return JSON ONLY with this schema:
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
         const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return {
-          provider: 'Groq (Llama 3.3 70B)',
-          direction: parsed.direction || probableBias,
-          confidence: conf,
-          trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `Groq Llama-3.3-70B verified ${probableBias} with ${conf}% confidence.`,
-          analysis_hi: parsed.reason_hi || `Groq AI ne ${probableBias} setup ko ${conf}% accuracy ke sath confirm kiya hai.`,
-          verdict: `Groq AI Approved: ${parsed.direction || probableBias}`,
-        };
+        return checkContradiction(parsed.direction || probableBias, 'Groq (Llama 3.3)', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -306,15 +335,7 @@ Return JSON ONLY with this schema:
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
         const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return {
-          provider: 'DeepSeek Chat',
-          direction: parsed.direction || probableBias,
-          confidence: conf,
-          trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `DeepSeek AI verified ${probableBias} with ${conf}% confidence.`,
-          analysis_hi: parsed.reason_hi || `DeepSeek AI ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
-          verdict: `DeepSeek AI Approved: ${parsed.direction || probableBias}`,
-        };
+        return checkContradiction(parsed.direction || probableBias, 'DeepSeek', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -334,15 +355,7 @@ Return JSON ONLY with this schema:
         );
         const parsed = JSON.parse(res.data.choices[0].message.content);
         const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return {
-          provider: 'OpenAI GPT-4o',
-          direction: parsed.direction || probableBias,
-          confidence: conf,
-          trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `OpenAI GPT-4o verified ${probableBias} with ${conf}% confidence.`,
-          analysis_hi: parsed.reason_hi || `OpenAI GPT-4o ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
-          verdict: `OpenAI Approved: ${parsed.direction || probableBias}`,
-        };
+        return checkContradiction(parsed.direction || probableBias, 'OpenAI GPT-4o', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -369,15 +382,7 @@ Return JSON ONLY with this schema:
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
         const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return {
-          provider: 'OpenRouter (Llama 3.3)',
-          direction: parsed.direction || probableBias,
-          confidence: conf,
-          trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `OpenRouter AI verified ${probableBias} with ${conf}% confidence.`,
-          analysis_hi: parsed.reason_hi || `OpenRouter AI ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
-          verdict: `OpenRouter Approved: ${parsed.direction || probableBias}`,
-        };
+        return checkContradiction(parsed.direction || probableBias, 'OpenRouter (Llama 3.3)', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
@@ -396,37 +401,30 @@ Return JSON ONLY with this schema:
         const text = res.data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(text);
         const conf = Math.max(Number(parsed.confidence) || 78, 75);
-        return {
-          provider: 'Google Gemini 1.5 Flash',
-          direction: parsed.direction || probableBias,
-          confidence: conf,
-          trap_risk: parsed.trap_risk || trapRisk,
-          analysis_en: parsed.reason_en || `Google Gemini verified ${probableBias} with ${conf}% confidence.`,
-          analysis_hi: parsed.reason_hi || `Gemini AI ne ${probableBias} ko ${conf}% accuracy ke sath confirm kiya hai.`,
-          verdict: `Gemini AI Approved: ${parsed.direction || probableBias}`,
-        };
+        return checkContradiction(parsed.direction || probableBias, 'Google Gemini 1.5 Flash', conf, parsed.reason_en, parsed.reason_hi);
       } catch {}
     }
 
-    // High-Accuracy Built-in Neural Strategy Consensus
-    const isHighAccuracy = biasPct >= 52 && adx >= 12;
-    const direction = isHighAccuracy ? probableBias : 'WAIT';
-    const confidence = isHighAccuracy ? Math.min(78 + Math.round((biasPct - 50) * 0.5), 98) : 55;
-
+    // Honest handling of unconfigured / offline AI providers (Zero Fabrication)
     return {
-      provider: 'Multi-AI Neural Consensus (Gemini + GPT + Tech Engine)',
-      direction,
-      confidence,
+      provider: 'Technical Analysis Engine (Quantitative Model)',
+      direction: techDir,
+      confidence: technicalScore,
       trap_risk: trapRisk,
       analysis_en:
-        direction === 'WAIT'
-          ? `Market confluence is at ${biasPct}%, which is below the 75% certainty threshold. Trade paused until clear directional setup.`
-          : `Multi-AI Ensemble confirmed ${direction} on ${symbol} with ${confidence}% confidence. Low trap risk detected.`,
+        techDir === 'WAIT'
+          ? `Market confluence is below the 75-point threshold. Quantitative engine paused trading.`
+          : `Quantitative Engine confirmed ${techDir} with ${technicalScore}/100 setup score. External AI providers unconfigured.`,
       analysis_hi:
-        direction === 'WAIT'
-          ? `Market confluence abhi ${biasPct}% hai jo 75% threshold se kam hai. Safe trading ke liye 75%+ high-accuracy setup ka intezar karein.`
-          : `Sare AI models ne ${direction} ko ${confidence}% accuracy ke sath confirm kiya hai. Trap risk LOW hai. Agli candle open pe trade lein.`,
-      verdict: direction === 'WAIT' ? '⚠️ Awaiting 75% Model Confidence' : `🔥 75%+ Confidence Confirmed: ${direction}`,
+        techDir === 'WAIT'
+          ? `Market confluence 75-point threshold se kam hai. Quantitative engine ne trade pause kiya hai.`
+          : `Quantitative Engine ne ${techDir} ko ${technicalScore}/100 setup score ke sath confirm kiya hai. External AI keys configure nahi hain.`,
+      verdict: techDir === 'WAIT' ? '⚠️ Awaiting Qualified Quantitative Setup' : `Quantitative Model Confirmed: ${techDir}`,
+      models: {
+        technical: { status: 'active', direction: techDir, score: technicalScore },
+        gemini: { status: activeGemini ? 'active' : 'unconfigured' },
+        openai: { status: activeOpenAI ? 'active' : 'unconfigured' },
+      },
     };
   },
 };

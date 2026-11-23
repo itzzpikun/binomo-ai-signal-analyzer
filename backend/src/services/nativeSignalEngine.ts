@@ -1,9 +1,21 @@
 // ============================================================
 // src/services/nativeSignalEngine.ts
-// Native high-precision technical analysis & confluence engine
-// Ensures 100% uptime with zero dependency on external Python process
+// Advanced Quantitative Binary Options Signal Engine
+// Implements 100-Point Scoring, Multi-Timeframe Alignment,
+// False Signal Filters, and Complete Technical Analysis Indicators
 // ============================================================
 import type { OHLCCandle } from '../types';
+
+export type MarketRegime = 'TRENDING' | 'RANGING' | 'VOLATILE';
+
+export interface ScoreBreakdown {
+  trendScore: number;       // Max 25
+  momentumScore: number;    // Max 20
+  priceActionScore: number; // Max 20
+  mtfScore: number;         // Max 20
+  volatilityScore: number;  // Max 15
+  totalScore: number;       // Max 100
+}
 
 export interface NextProbableSetup {
   bias: 'CALL' | 'PUT';
@@ -16,8 +28,18 @@ export interface NextProbableSetup {
 
 export interface NativeSignalResult {
   direction: 'CALL' | 'PUT' | 'WAIT';
-  confidence: number;
+  confidence: number; // Quantitative Setup Score (0-100)
   trade_quality: string;
+  score_breakdown: ScoreBreakdown;
+  market_regime: MarketRegime;
+  false_signal_filter: {
+    isTriggered: boolean;
+    reason: string | null;
+    isSideways: boolean;
+    isAbnormalVolatility: boolean;
+    isFalseBreakout: boolean;
+    isWickRejection: boolean;
+  };
   entry_timing: {
     rule_en: string;
     rule_hi: string;
@@ -34,18 +56,69 @@ export interface NativeSignalResult {
   indicators: {
     rsi: { value: number | null; signal: string };
     macd: { macd: number | null; signal_line: number | null; histogram: number | null; crossover: string };
-    ema: { ema8: number | null; ema9: number | null; ema21: number | null; ema28: number | null; ema50: number | null; trend: string };
-    adx: { adx: number; plus_di: number; minus_di: number; trend_strength: string };
-    awesome_oscillator: { ao: number; color: string; momentum: string };
-    bollinger: { upper: number | null; middle: number | null; lower: number | null; width: number | null; percent_b: number | null; signal: string };
-    support_resistance: { nearest_support: number | null; nearest_resistance: number | null; position: string };
-    stochastic: { k: number | null; d: number | null; signal: string };
+    ema: {
+      ema9: number | null;
+      ema21: number | null;
+      ema50: number | null;
+      ema200: number | null;
+      trend: string;
+    };
+    sma: {
+      sma50: number | null;
+      sma200: number | null;
+      trend: string;
+    };
+    bollinger: {
+      upper: number | null;
+      middle: number | null;
+      lower: number | null;
+      width: number | null;
+      percent_b: number | null;
+      signal: string;
+    };
+    adx: {
+      adx: number;
+      plus_di: number;
+      minus_di: number;
+      trend_strength: string;
+    };
+    atr: {
+      value: number;
+      isSpike: boolean;
+    };
+    stochastic_rsi: {
+      k: number | null;
+      d: number | null;
+      signal: string;
+    };
+    vwap: {
+      value: number | null;
+      position: string;
+    };
+    support_resistance: {
+      nearest_support: number | null;
+      nearest_resistance: number | null;
+      position: string;
+    };
+    stochastic: {
+      k: number | null;
+      d: number | null;
+      signal: string;
+    };
   };
   reasons: {
     bullish: string[];
     bearish: string[];
+    wait_reasons?: string[];
   };
   patterns: Array<{ name: string; type: 'bullish' | 'bearish' | 'neutral'; strength: number }>;
+  timeframe_alignment?: {
+    '1m'?: string;
+    '5m'?: string;
+    '15m'?: string;
+    isAligned?: boolean;
+    conflictDetected?: boolean;
+  };
   analysis_horizon: string;
   timestamp: string;
   disclaimer: string;
@@ -54,7 +127,21 @@ export interface NativeSignalResult {
 
 // ── Technical Indicator Calculations ─────────────────────────
 
-function calcEMA(values: number[], period: number): number[] {
+export function calcSMA(values: number[], period: number): number[] {
+  if (values.length < period) return [];
+  const sma: number[] = [];
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  sma.push(sum / period);
+
+  for (let i = period; i < values.length; i++) {
+    sum += values[i] - values[i - period];
+    sma.push(sum / period);
+  }
+  return sma;
+}
+
+export function calcEMA(values: number[], period: number): number[] {
   if (values.length === 0) return [];
   const k = 2 / (period + 1);
   const ema: number[] = [values[0]];
@@ -64,7 +151,7 @@ function calcEMA(values: number[], period: number): number[] {
   return ema;
 }
 
-function calcRSI(closes: number[], period = 14): number {
+export function calcRSI(closes: number[], period = 14): number {
   if (closes.length < period + 1) return 50;
   let gains = 0;
   let losses = 0;
@@ -89,25 +176,36 @@ function calcRSI(closes: number[], period = 14): number {
   return 100 - (100 / (1 + rs));
 }
 
-function calcMACD(closes: number[]): { macd: number; signal: number; histogram: number } {
-  if (closes.length < 26) return { macd: 0, signal: 0, histogram: 0 };
-  const ema12 = calcEMA(closes, 12);
-  const ema26 = calcEMA(closes, 26);
+export function calcMACD(
+  closes: number[],
+  fast = 12,
+  slow = 26,
+  signal = 9
+): { macd: number; signal: number; histogram: number; crossover: string } {
+  if (closes.length < slow) {
+    return { macd: 0, signal: 0, histogram: 0, crossover: 'neutral' };
+  }
+  const emaFast = calcEMA(closes, fast);
+  const emaSlow = calcEMA(closes, slow);
   const macdLine: number[] = [];
   for (let i = 0; i < closes.length; i++) {
-    macdLine.push(ema12[i] - ema26[i]);
+    macdLine.push(emaFast[i] - emaSlow[i]);
   }
-  const signalLine = calcEMA(macdLine.slice(25), 9);
+  const signalLine = calcEMA(macdLine.slice(slow - 1), signal);
   const curMacd = macdLine[macdLine.length - 1];
   const curSignal = signalLine.length > 0 ? signalLine[signalLine.length - 1] : 0;
-  return {
-    macd: curMacd,
-    signal: curSignal,
-    histogram: curMacd - curSignal,
-  };
+  const prevMacd = macdLine[macdLine.length - 2] || curMacd;
+  const prevSignal = signalLine.length > 1 ? signalLine[signalLine.length - 2] : curSignal;
+
+  const histogram = curMacd - curSignal;
+  let crossover = 'neutral';
+  if (prevMacd <= prevSignal && curMacd > curSignal) crossover = 'bullish_cross';
+  else if (prevMacd >= prevSignal && curMacd < curSignal) crossover = 'bearish_cross';
+
+  return { macd: curMacd, signal: curSignal, histogram, crossover };
 }
 
-function calcBollingerBands(closes: number[], period = 20, multiplier = 2) {
+export function calcBollingerBands(closes: number[], period = 20, multiplier = 2) {
   if (closes.length < period) {
     const c = closes[closes.length - 1] || 1;
     return { upper: c * 1.01, middle: c, lower: c * 0.99, width: c * 0.02, percent_b: 0.5 };
@@ -119,35 +217,27 @@ function calcBollingerBands(closes: number[], period = 20, multiplier = 2) {
   const upper = mean + multiplier * std;
   const lower = mean - multiplier * std;
   const current = closes[closes.length - 1];
-  const percent_b = (upper - lower) > 0 ? (current - lower) / (upper - lower) : 0.5;
-  return {
-    upper,
-    middle: mean,
-    lower,
-    width: upper - lower,
-    percent_b,
-  };
+  const width = upper - lower;
+  const percent_b = width > 0 ? (current - lower) / width : 0.5;
+  return { upper, middle: mean, lower, width, percent_b };
 }
 
-function calcStochastic(highs: number[], lows: number[], closes: number[], period = 14) {
-  if (closes.length < period) return { k: 50, d: 50 };
-  const curHighs = highs.slice(-period);
-  const curLows = lows.slice(-period);
-  const highest = Math.max(...curHighs);
-  const lowest = Math.min(...curLows);
-  const currentClose = closes[closes.length - 1];
-  const range = highest - lowest;
-  const k = range > 0 ? ((currentClose - lowest) / range) * 100 : 50;
-  return { k, d: k };
-}
+export function calcADX(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period = 14
+): { adx: number; plus_di: number; minus_di: number; trend_strength: string } {
+  if (closes.length < period + 2) {
+    return { adx: 20, plus_di: 20, minus_di: 20, trend_strength: 'Weak' };
+  }
 
-function calcADX(highs: number[], lows: number[], closes: number[], period = 5) {
-  if (closes.length < period + 2) return { adx: 25, plus_di: 20, minus_di: 20 };
   let trSum = 0;
   let plusDmSum = 0;
   let minusDmSum = 0;
 
-  for (let i = closes.length - period; i < closes.length; i++) {
+  const startIdx = Math.max(1, closes.length - period);
+  for (let i = startIdx; i < closes.length; i++) {
     const h = highs[i];
     const l = lows[i];
     const prevC = closes[i - 1];
@@ -169,37 +259,170 @@ function calcADX(highs: number[], lows: number[], closes: number[], period = 5) 
   const diDiff = Math.abs(plus_di - minus_di);
   const diSum = plus_di + minus_di;
   const dx = diSum > 0 ? (diDiff / diSum) * 100 : 20;
+
+  const adxVal = Math.round(dx * 10) / 10;
+  let trend_strength = 'Weak / Chop';
+  if (adxVal >= 40) trend_strength = 'Very Strong Trend';
+  else if (adxVal >= 25) trend_strength = 'Strong Trend';
+  else if (adxVal >= 20) trend_strength = 'Moderate Trend';
+
   return {
-    adx: Math.round(dx * 10) / 10,
+    adx: adxVal,
     plus_di: Math.round(plus_di * 10) / 10,
     minus_di: Math.round(minus_di * 10) / 10,
+    trend_strength,
   };
 }
 
-function calcAwesomeOscillator(highs: number[], lows: number[]): { ao: number; color: string; momentum: string } {
-  if (highs.length < 34) return { ao: 0, color: 'neutral', momentum: 'Flat' };
-  const midpoints = highs.map((h, i) => (h + lows[i]) / 2);
-  const sma5 = midpoints.slice(-5).reduce((a, b) => a + b, 0) / 5;
-  const sma34 = midpoints.slice(-34).reduce((a, b) => a + b, 0) / 34;
-  const ao = sma5 - sma34;
-
-  const prevSma5 = midpoints.slice(-6, -1).reduce((a, b) => a + b, 0) / 5;
-  const prevSma34 = midpoints.slice(-35, -1).reduce((a, b) => a + b, 0) / 34;
-  const prevAo = prevSma5 - prevSma34;
-
-  const color = ao >= prevAo ? 'green' : 'red';
-  const momentum = ao > 0 && color === 'green' ? 'Bullish Expansion' : (ao < 0 && color === 'red' ? 'Bearish Expansion' : 'Consolidation');
-  return { ao, color, momentum };
+export function calcATR(highs: number[], lows: number[], closes: number[], period = 14): { current: number; average: number } {
+  if (closes.length < 2) return { current: 0.001, average: 0.001 };
+  const trs: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trs.push(tr);
+  }
+  const curTr = trs[trs.length - 1] || 0.001;
+  const periodSlice = trs.slice(-period);
+  const avgAtr = periodSlice.reduce((a, b) => a + b, 0) / Math.max(periodSlice.length, 1);
+  return { current: curTr, average: avgAtr };
 }
 
-// ── Pattern Detection ────────────────────────────────────────
+export function calcStochasticRSI(
+  closes: number[],
+  rsiPeriod = 14,
+  stochPeriod = 14,
+  smoothK = 3,
+  smoothD = 3
+): { k: number; d: number; signal: string } {
+  if (closes.length < rsiPeriod + stochPeriod) {
+    return { k: 50, d: 50, signal: 'neutral' };
+  }
 
-function detectCandlePatterns(candles: OHLCCandle[]) {
+  // Calculate rolling RSIs
+  const rsiValues: number[] = [];
+  for (let i = rsiPeriod + 1; i <= closes.length; i++) {
+    const subCloses = closes.slice(0, i);
+    rsiValues.push(calcRSI(subCloses, rsiPeriod));
+  }
+
+  if (rsiValues.length < stochPeriod) {
+    return { k: 50, d: 50, signal: 'neutral' };
+  }
+
+  const rawK: number[] = [];
+  for (let i = stochPeriod; i <= rsiValues.length; i++) {
+    const slice = rsiValues.slice(i - stochPeriod, i);
+    const minRsi = Math.min(...slice);
+    const maxRsi = Math.max(...slice);
+    const curRsi = slice[slice.length - 1];
+    const stochRsi = maxRsi - minRsi > 0 ? ((curRsi - minRsi) / (maxRsi - minRsi)) * 100 : 50;
+    rawK.push(stochRsi);
+  }
+
+  const kValues = calcSMA(rawK, smoothK);
+  const curK = kValues.length > 0 ? kValues[kValues.length - 1] : 50;
+  const dValues = calcSMA(kValues, smoothD);
+  const curD = dValues.length > 0 ? dValues[dValues.length - 1] : curK;
+
+  let signal = 'neutral';
+  if (curK < 25 && curK > curD) signal = 'oversold_bullish';
+  else if (curK > 75 && curK < curD) signal = 'overbought_bearish';
+  else if (curK > curD) signal = 'bullish_momentum';
+  else if (curK < curD) signal = 'bearish_momentum';
+
+  return { k: Math.round(curK * 10) / 10, d: Math.round(curD * 10) / 10, signal };
+}
+
+export function calcVWAP(candles: OHLCCandle[]): number | null {
+  if (candles.length === 0) return null;
+  let cumTypicalVol = 0;
+  let cumVol = 0;
+
+  for (const c of candles) {
+    const typicalPrice = (c.high + c.low + c.close) / 3;
+    const vol = c.volume && c.volume > 0 ? c.volume : 100;
+    cumTypicalVol += typicalPrice * vol;
+    cumVol += vol;
+  }
+  return cumVol > 0 ? cumTypicalVol / cumVol : null;
+}
+
+export function calcSupportResistance(candles: OHLCCandle[]): {
+  nearestSupport: number | null;
+  nearestResistance: number | null;
+  distanceSupportPct: number;
+  distanceResistancePct: number;
+  position: string;
+} {
+  if (candles.length < 5) {
+    return {
+      nearestSupport: null,
+      nearestResistance: null,
+      distanceSupportPct: 1,
+      distanceResistancePct: 1,
+      position: 'mid_range',
+    };
+  }
+
+  const currentClose = candles[candles.length - 1].close;
+  const swingHighs: number[] = [];
+  const swingLows: number[] = [];
+
+  for (let i = 2; i < candles.length - 2; i++) {
+    const c = candles[i];
+    if (
+      c.high >= candles[i - 1].high &&
+      c.high >= candles[i - 2].high &&
+      c.high >= candles[i + 1].high &&
+      c.high >= candles[i + 2].high
+    ) {
+      swingHighs.push(c.high);
+    }
+    if (
+      c.low <= candles[i - 1].low &&
+      c.low <= candles[i - 2].low &&
+      c.low <= candles[i + 1].low &&
+      c.low <= candles[i + 2].low
+    ) {
+      swingLows.push(c.low);
+    }
+  }
+
+  const resistancesAbove = swingHighs.filter((h) => h >= currentClose);
+  const supportsBelow = swingLows.filter((l) => l <= currentClose);
+
+  const nearestResistance = resistancesAbove.length > 0 ? Math.min(...resistancesAbove) : null;
+  const nearestSupport = supportsBelow.length > 0 ? Math.max(...supportsBelow) : null;
+
+  const distRes = nearestResistance ? (nearestResistance - currentClose) / currentClose : 0.05;
+  const distSup = nearestSupport ? (currentClose - nearestSupport) / currentClose : 0.05;
+
+  let position = 'mid_range';
+  if (distRes <= 0.001) position = 'at_resistance';
+  else if (distSup <= 0.001) position = 'at_support';
+  else if (distRes < distSup) position = 'near_resistance';
+  else if (distSup < distRes) position = 'near_support';
+
+  return {
+    nearestSupport,
+    nearestResistance,
+    distanceSupportPct: distSup,
+    distanceResistancePct: distRes,
+    position,
+  };
+}
+
+export function detectCandlePatterns(candles: OHLCCandle[]) {
   const patterns: Array<{ name: string; type: 'bullish' | 'bearish' | 'neutral'; strength: number }> = [];
   if (candles.length < 3) return patterns;
 
   const last = candles[candles.length - 1];
   const prev = candles[candles.length - 2];
+  const prev2 = candles[candles.length - 3];
 
   const body = Math.abs(last.close - last.open);
   const range = last.high - last.low || 0.0001;
@@ -212,472 +435,505 @@ function detectCandlePatterns(candles: OHLCCandle[]) {
   const prevIsRed = prev.close < prev.open;
   const prevIsGreen = prev.close > prev.open;
 
+  // Doji
+  if (body / range < 0.1) {
+    patterns.push({ name: 'Doji (Indecision)', type: 'neutral', strength: 0.6 });
+  }
+
   // Bullish Engulfing
-  if (prevIsRed && isGreen && last.open <= prev.close && last.close >= prev.open && body > prevBody * 1.1) {
+  if (prevIsRed && isGreen && last.open <= prev.close && last.close >= prev.open && body > prevBody * 1.05) {
     patterns.push({ name: 'Bullish Engulfing', type: 'bullish', strength: 0.9 });
   }
 
   // Bearish Engulfing
-  if (prevIsGreen && isRed && last.open >= prev.close && last.close <= prev.open && body > prevBody * 1.1) {
+  if (prevIsGreen && isRed && last.open >= prev.close && last.close <= prev.open && body > prevBody * 1.05) {
     patterns.push({ name: 'Bearish Engulfing', type: 'bearish', strength: 0.9 });
   }
 
   // Hammer / Pinbar (Bullish)
-  if (lowerWick >= body * 2 && upperWick <= body * 0.5) {
-    patterns.push({ name: 'Bullish Pinbar / Hammer', type: 'bullish', strength: 0.85 });
+  if (lowerWick >= body * 2 && upperWick <= body * 0.4) {
+    patterns.push({ name: 'Bullish Hammer / Pinbar', type: 'bullish', strength: 0.85 });
   }
 
-  // Shooting Star / Inverted Hammer (Bearish)
-  if (upperWick >= body * 2 && lowerWick <= body * 0.5) {
+  // Shooting Star (Bearish)
+  if (upperWick >= body * 2 && lowerWick <= body * 0.4) {
     patterns.push({ name: 'Bearish Shooting Star', type: 'bearish', strength: 0.85 });
   }
 
-  // Strong Bullish Marubozu
-  if (isGreen && body / range > 0.85) {
-    patterns.push({ name: 'Bullish Marubozu', type: 'bullish', strength: 0.75 });
+  // Morning Star (3-candle bullish reversal)
+  if (prev2.close < prev2.open && Math.abs(prev.close - prev.open) < (prev2.open - prev2.close) * 0.4 && isGreen && last.close > (prev2.open + prev2.close) / 2) {
+    patterns.push({ name: 'Morning Star Reversal', type: 'bullish', strength: 0.95 });
   }
 
-  // Strong Bearish Marubozu
+  // Evening Star (3-candle bearish reversal)
+  if (prev2.close > prev2.open && Math.abs(prev.close - prev.open) < (prev2.close - prev2.open) * 0.4 && isRed && last.close < (prev2.open + prev2.close) / 2) {
+    patterns.push({ name: 'Evening Star Reversal', type: 'bearish', strength: 0.95 });
+  }
+
+  // Bullish Marubozu
+  if (isGreen && body / range > 0.85) {
+    patterns.push({ name: 'Bullish Marubozu (Strong Momentum)', type: 'bullish', strength: 0.8 });
+  }
+
+  // Bearish Marubozu
   if (isRed && body / range > 0.85) {
-    patterns.push({ name: 'Bearish Marubozu', type: 'bearish', strength: 0.75 });
+    patterns.push({ name: 'Bearish Marubozu (Strong Momentum)', type: 'bearish', strength: 0.8 });
   }
 
   return patterns;
 }
 
-// ── In-Memory Signal Latching / Persistence ──────────────────
-// Locks the signal decision per candle-slot to guarantee ZERO fluctuation during the candle
+// ── In-Memory Candle Latching ────────────────────────────────
 interface LatchedSignal {
   candleSlot: number;
   direction: 'CALL' | 'PUT' | 'WAIT';
   confidence: number;
   trade_quality: string;
-  quality_label: string;
-  reasons: { bullish: string[]; bearish: string[] };
+  score_breakdown: ScoreBreakdown;
+  reasons: { bullish: string[]; bearish: string[]; wait_reasons?: string[] };
 }
-
 const signalLatchMap = new Map<string, LatchedSignal>();
 
-// ── Main Native Analysis Engine ──────────────────────────────
+// ── Core Multi-Factor Quantitative Analyzer ─────────────────
 
 export function analyzeCandlesNative(
   candles: OHLCCandle[],
   symbol = 'Crypto IDX',
-  interval = '1min'
+  interval = '1min',
+  mtfContext?: {
+    s5mDirection?: 'CALL' | 'PUT' | 'WAIT';
+    s15mDirection?: 'CALL' | 'PUT' | 'WAIT';
+  }
 ): NativeSignalResult {
-  const minRequired = 5;
-  if (candles.length < minRequired) {
+  const disclaimer =
+    'This signal is for informational purposes only. Quantitative setups represent model confluence, not guaranteed financial returns.';
+
+  if (!candles || candles.length < 15) {
     return {
       direction: 'WAIT',
-      confidence: 30,
-      trade_quality: 'INSUFFICIENT DATA',
+      confidence: 40,
+      trade_quality: 'INSUFFICIENT_DATA',
+      score_breakdown: { trendScore: 0, momentumScore: 0, priceActionScore: 0, mtfScore: 0, volatilityScore: 0, totalScore: 0 },
+      market_regime: 'RANGING',
+      false_signal_filter: { isTriggered: true, reason: 'Insufficient candle history (<15 candles)', isSideways: true, isAbnormalVolatility: false, isFalseBreakout: false, isWickRejection: false },
       entry_timing: {
-        rule_en: 'Need at least 10 candles for calculation.',
-        rule_hi: 'कम से कम 10 कैंडल्स चाहिए।',
-        recommended_action: 'Wait for data accumulation',
-        entry_window: 'N/A',
-        expiry_duration: '5 min',
+        rule_en: 'Accumulating market data before calculating quantitative setup.',
+        rule_hi: 'Paryapt candle data aane tak wait karein.',
+        recommended_action: 'Wait for live feed',
+        entry_window: 'None',
+        expiry_duration: '1min',
         confluence_count: 0,
-        quality_tier: 'INSUFFICIENT DATA',
-        quality_label: 'Accumulating market data...',
-        matched_frameworks: [],
+        quality_tier: 'WAIT',
+        quality_label: 'Awaiting market feed accumulation',
+        matched_frameworks: ['Data Accumulation'],
       },
-      confluence_score: 0,
-      next_probable_setup: {
-        bias: 'CALL',
-        biasPercentage: 50,
-        bullishPower: 50,
-        bearishPower: 50,
-        watchTrigger: 'Accumulating initial market candles...',
-        setupSummary: 'Collecting market data',
-      },
-      indicators: {
-        rsi: { value: 50, signal: 'neutral' },
-        macd: { macd: 0, signal_line: 0, histogram: 0, crossover: 'neutral' },
-        ema: { ema8: null, ema9: null, ema21: null, ema28: null, ema50: null, trend: 'neutral' },
-        adx: { adx: 20, plus_di: 20, minus_di: 20, trend_strength: 'low' },
-        awesome_oscillator: { ao: 0, color: 'neutral', momentum: 'Flat' },
-        bollinger: { upper: null, middle: null, lower: null, width: null, percent_b: 0.5, signal: 'neutral' },
-        support_resistance: { nearest_support: null, nearest_resistance: null, position: 'middle' },
-        stochastic: { k: 50, d: 50, signal: 'neutral' },
-      },
-      reasons: { bullish: [], bearish: [] },
+      confluence_score: 40,
+      next_probable_setup: { bias: 'CALL', biasPercentage: 50, bullishPower: 50, bearishPower: 50, watchTrigger: 'Awaiting candle accumulation', setupSummary: 'Insufficient market data' },
+      indicators: {} as any,
+      reasons: { bullish: [], bearish: [], wait_reasons: ['Insufficient candle history (<15 candles)'] },
       patterns: [],
-      analysis_horizon: '5 minutes',
+      analysis_horizon: interval,
       timestamp: new Date().toISOString(),
-      disclaimer: 'Technical analysis only.',
+      disclaimer,
     };
   }
 
   const closes = candles.map((c) => c.close);
   const highs = candles.map((c) => c.high);
   const lows = candles.map((c) => c.low);
-  const currentClose = closes[closes.length - 1];
+  const currentPrice = closes[closes.length - 1];
+  const lastCandle = candles[candles.length - 1];
 
-  // 1. Indicators
-  const rsiVal = calcRSI(closes, 14);
-  const macdData = calcMACD(closes);
+  // 1. Calculate All Technical Indicators
+  const rsi = calcRSI(closes, 14);
+  const macdData = calcMACD(closes, 12, 26, 9);
+  const ema9Arr = calcEMA(closes, 9);
+  const ema21Arr = calcEMA(closes, 21);
+  const ema50Arr = calcEMA(closes, 50);
+  const ema200Arr = calcEMA(closes, 200);
+
+  const ema9 = ema9Arr[ema9Arr.length - 1];
+  const ema21 = ema21Arr[ema21Arr.length - 1];
+  const ema50 = ema50Arr.length > 0 ? ema50Arr[ema50Arr.length - 1] : ema21;
+  const ema200 = ema200Arr.length > 0 ? ema200Arr[ema200Arr.length - 1] : ema50;
+
+  const sma50Arr = calcSMA(closes, 50);
+  const sma200Arr = calcSMA(closes, 200);
+  const sma50 = sma50Arr.length > 0 ? sma50Arr[sma50Arr.length - 1] : ema50;
+  const sma200 = sma200Arr.length > 0 ? sma200Arr[sma200Arr.length - 1] : ema200;
+
   const bbData = calcBollingerBands(closes, 20, 2);
-  const stochData = calcStochastic(highs, lows, closes, 14);
-  const adxData = calcADX(highs, lows, closes, 5);
-  const aoData = calcAwesomeOscillator(highs, lows);
+  const adxData = calcADX(highs, lows, closes, 14);
+  const atrData = calcATR(highs, lows, closes, 14);
+  const stochRsiData = calcStochasticRSI(closes, 14, 14, 3, 3);
+  const vwapValue = calcVWAP(candles);
+  const srData = calcSupportResistance(candles);
   const patterns = detectCandlePatterns(candles);
 
-  const ema8List = calcEMA(closes, 8);
-  const ema9List = calcEMA(closes, 9);
-  const ema21List = calcEMA(closes, 21);
-  const ema28List = calcEMA(closes, 28);
-  const ema50List = calcEMA(closes, Math.min(50, closes.length));
+  // 2. Market Regime & False Signal Detection
+  const bbWidthPct = bbData.width / Math.max(bbData.middle, 1);
+  let marketRegime: MarketRegime = 'TRENDING';
+  if (adxData.adx < 20 || bbWidthPct < 0.002) {
+    marketRegime = 'RANGING';
+  } else if (atrData.current > atrData.average * 2.2) {
+    marketRegime = 'VOLATILE';
+  }
 
-  const ema8 = ema8List[ema8List.length - 1];
-  const ema9 = ema9List[ema9List.length - 1];
-  const ema21 = ema21List[ema21List.length - 1];
-  const ema28 = ema28List[ema28List.length - 1];
-  const ema50 = ema50List[ema50List.length - 1];
+  // False Signal Checks
+  const isSideways = marketRegime === 'RANGING';
+  const isAbnormalVolatility = atrData.current > atrData.average * 2.5;
 
-  // 2. Confluence Analysis & Reasons
+  // Wick rejection check
+  const lastRange = lastCandle.high - lastCandle.low || 0.0001;
+  const lastBody = Math.abs(lastCandle.close - lastCandle.open);
+  const lastUpperWick = lastCandle.high - Math.max(lastCandle.open, lastCandle.close);
+  const lastLowerWick = Math.min(lastCandle.open, lastCandle.close) - lastCandle.low;
+
+  const isCallWickRejection = lastUpperWick > lastBody * 1.8 && srData.position === 'at_resistance';
+  const isPutWickRejection = lastLowerWick > lastBody * 1.8 && srData.position === 'at_support';
+  const isWickRejection = isCallWickRejection || isPutWickRejection;
+
+  // False breakout check
+  const isFalseBreakout =
+    (srData.position === 'at_resistance' && lastUpperWick > lastRange * 0.5 && lastCandle.close < (srData.nearestResistance || currentPrice)) ||
+    (srData.position === 'at_support' && lastLowerWick > lastRange * 0.5 && lastCandle.close > (srData.nearestSupport || currentPrice));
+
+  // 3. Quantitative 100-Point Scoring Engine
+  // Section 4 Specification:
+  // - Trend confirmation: 25 points
+  // - Momentum confirmation: 20 points
+  // - Price action: 20 points
+  // - Multi-timeframe agreement: 20 points
+  // - Volatility and market quality: 15 points
+  // Total: 100 points
+
+  let bullTrend = 0;
+  let bearTrend = 0;
+  // Trend (25 pts):
+  // EMA 9 > 21 > 50 (12 pts)
+  if (ema9 > ema21) {
+    bullTrend += ema21 > ema50 ? 12 : 8;
+  } else if (ema9 < ema21) {
+    bearTrend += ema21 < ema50 ? 12 : 8;
+  }
+  // Macro trend Price vs SMA 50 / 200 (8 pts)
+  if (currentPrice > sma50) bullTrend += 4;
+  else bearTrend += 4;
+  if (currentPrice > sma200) bullTrend += 4;
+  else bearTrend += 4;
+  // MACD line relative to zero line (5 pts)
+  if (macdData.macd > 0) bullTrend += 5;
+  else bearTrend += 5;
+
+  // Momentum (20 pts):
+  let bullMom = 0;
+  let bearMom = 0;
+  // RSI(14) healthy momentum (7 pts)
+  if (rsi >= 50 && rsi <= 68) bullMom += 7;
+  else if (rsi > 68 && rsi <= 75) bullMom += 4;
+  else if (rsi <= 50 && rsi >= 32) bearMom += 7;
+  else if (rsi < 32 && rsi >= 25) bearMom += 4;
+
+  // MACD histogram expanding in direction (6 pts)
+  if (macdData.histogram > 0) bullMom += 6;
+  else if (macdData.histogram < 0) bearMom += 6;
+
+  // Stochastic RSI crossover (7 pts)
+  if (stochRsiData.signal === 'oversold_bullish' || stochRsiData.signal === 'bullish_momentum') bullMom += 7;
+  else if (stochRsiData.signal === 'overbought_bearish' || stochRsiData.signal === 'bearish_momentum') bearMom += 7;
+
+  // Price Action (20 pts):
+  let bullPA = 0;
+  let bearPA = 0;
+  // Market Structure: Higher Highs / Higher Lows (8 pts)
+  const prevCandle = candles[candles.length - 2];
+  if (lastCandle.high > prevCandle.high && lastCandle.low > prevCandle.low) bullPA += 8;
+  else if (lastCandle.high < prevCandle.high && lastCandle.low < prevCandle.low) bearPA += 8;
+
+  // Candlestick pattern recognition (7 pts)
+  const bullPattern = patterns.find((p) => p.type === 'bullish');
+  const bearPattern = patterns.find((p) => p.type === 'bearish');
+  if (bullPattern) bullPA += Math.round(bullPattern.strength * 7);
+  if (bearPattern) bearPA += Math.round(bearPattern.strength * 7);
+
+  // S/R Bounce or clean breakout (5 pts)
+  if (srData.position === 'at_support' && lastCandle.close > lastCandle.open) bullPA += 5;
+  else if (srData.position === 'at_resistance' && lastCandle.close < lastCandle.open) bearPA += 5;
+  else if (srData.position === 'mid_range') {
+    bullPA += 2;
+    bearPA += 2;
+  }
+
+  // Multi-Timeframe Agreement (20 pts):
+  let bullMtf = 0;
+  let bearMtf = 0;
+  let conflictDetected = false;
+
+  const s5m = mtfContext?.s5mDirection;
+  const s15m = mtfContext?.s15mDirection;
+
+  if (s5m) {
+    if (s5m === 'CALL') bullMtf += 10;
+    else if (s5m === 'PUT') bearMtf += 10;
+  } else {
+    // Single timeframe fallback: use 9/21 cross slope as proxy
+    bullMtf += ema9 > ema21 ? 10 : 0;
+    bearMtf += ema9 < ema21 ? 10 : 0;
+  }
+
+  if (s15m) {
+    if (s15m === 'CALL') bullMtf += 10;
+    else if (s15m === 'PUT') bearMtf += 10;
+  } else {
+    bullMtf += currentPrice > sma50 ? 10 : 0;
+    bearMtf += currentPrice < sma50 ? 10 : 0;
+  }
+
+  // Detect direct 1M vs 15M conflict
+  if (s15m && s5m) {
+    if ((s5m === 'CALL' && s15m === 'PUT') || (s5m === 'PUT' && s15m === 'CALL')) {
+      conflictDetected = true;
+    }
+  }
+
+  // Volatility & Market Quality (15 pts):
+  let volScore = 0;
+  if (adxData.adx >= 22) volScore += 8;
+  else if (adxData.adx >= 18) volScore += 4;
+
+  if (bbWidthPct >= 0.0015 && bbWidthPct <= 0.015) volScore += 4;
+  else volScore += 2;
+
+  if (!isAbnormalVolatility) volScore += 3;
+
+  // Total scores
+  const bullTotal = bullTrend + bullMom + bullPA + bullMtf + volScore;
+  const bearTotal = bearTrend + bearMom + bearPA + bearMtf + volScore;
+
+  const dominantBias: 'CALL' | 'PUT' = bullTotal >= bearTotal ? 'CALL' : 'PUT';
+  const dominantScore = dominantBias === 'CALL' ? bullTotal : bearTotal;
+
+  const scoreBreakdown: ScoreBreakdown = {
+    trendScore: dominantBias === 'CALL' ? bullTrend : bearTrend,
+    momentumScore: dominantBias === 'CALL' ? bullMom : bearMom,
+    priceActionScore: dominantBias === 'CALL' ? bullPA : bearPA,
+    mtfScore: dominantBias === 'CALL' ? bullMtf : bearMtf,
+    volatilityScore: volScore,
+    totalScore: dominantScore,
+  };
+
+  // 4. Signal Policy Decision
+  // Rules:
+  // - 85–100: Strong setup
+  // - 75–84: Moderate setup
+  // - Below 75: WAIT
+  // - Conflicting timeframes: WAIT
+  // - Sideways / False Breakout: WAIT
+  let direction: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
+  let trade_quality = 'AWAITING_QUALIFIED_SETUP';
+  const waitReasons: string[] = [];
   const bullReasons: string[] = [];
   const bearReasons: string[] = [];
-  let bullConfluences = 0;
-  let bearConfluences = 0;
-
-  // 1. Binomo Strategy #1: EMA 8 & EMA 21 Trend & Dynamic Support
-  if (ema8 >= ema21) {
-    bullConfluences += 1.4;
-    bullReasons.push(`Binomo Strategy #1: EMA 8 (${ema8.toFixed(2)}) > EMA 21 (${ema21.toFixed(2)}) Bullish Trend`);
-    if (currentClose >= ema8) {
-      bullConfluences += 0.8;
-      bullReasons.push('Price holding above fast EMA 8 momentum line');
-    } else {
-      bullConfluences += 0.6;
-      bullReasons.push('Price testing EMA 8/21 dynamic support (Pullback bounce setup)');
-    }
-  } else {
-    bearConfluences += 1.4;
-    bearReasons.push(`Binomo Strategy #1: EMA 8 (${ema8.toFixed(2)}) < EMA 21 (${ema21.toFixed(2)}) Bearish Trend`);
-    if (currentClose <= ema8) {
-      bearConfluences += 0.8;
-      bearReasons.push('Price holding below fast EMA 8 resistance line');
-    } else {
-      bearConfluences += 0.6;
-      bearReasons.push('Price testing EMA 8/21 dynamic resistance (Pullback rejection setup)');
-    }
-  }
-
-  // 2. Candle Price Action Momentum
-  const lastCandle = candles[candles.length - 1];
-  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
-  const isLastGreen = lastCandle.close >= lastCandle.open;
-  const isPrevGreen = prevCandle ? prevCandle.close >= prevCandle.open : isLastGreen;
-
-  if (isLastGreen) {
-    bullConfluences += 1.2;
-    bullReasons.push('Active candle closed Bullish (Green) with buyer control');
-    if (isPrevGreen) {
-      bullConfluences += 0.6;
-      bullReasons.push('Consecutive Bullish candles — Upward momentum continuation');
-    }
-  } else {
-    bearConfluences += 1.2;
-    bearReasons.push('Active candle closed Bearish (Red) with seller control');
-    if (!isPrevGreen) {
-      bearConfluences += 0.6;
-      bearReasons.push('Consecutive Bearish candles — Downward momentum continuation');
-    }
-  }
-
-  // 3. Binomo Strategy #2: EMA 28 + ADX 5
-  if (adxData.plus_di >= adxData.minus_di) {
-    bullConfluences += 1.1;
-    bullReasons.push(`Binomo Strategy #2: +DI (${adxData.plus_di}) > -DI (${adxData.minus_di}) Buyers Dominating`);
-  } else {
-    bearConfluences += 1.1;
-    bearReasons.push(`Binomo Strategy #2: -DI (${adxData.minus_di}) > +DI (${adxData.plus_di}) Sellers Dominating`);
-  }
-
-  // 4. Binomo Strategy #3: Awesome Oscillator
-  if (aoData.color === 'green' || aoData.ao > 0) {
-    bullConfluences += 0.9;
-    bullReasons.push('Binomo Strategy #3: Awesome Oscillator Bullish');
-  } else {
-    bearConfluences += 0.9;
-    bearReasons.push('Binomo Strategy #3: Awesome Oscillator Bearish');
-  }
-
-  // 5. RSI Momentum & Boundaries
-  if (rsiVal < 32) {
-    bullConfluences += 1.6;
-    bullReasons.push(`RSI Oversold (${rsiVal.toFixed(1)}) — High Probability Bullish Reversal CALL`);
-  } else if (rsiVal > 68) {
-    bearConfluences += 1.6;
-    bearReasons.push(`RSI Overbought (${rsiVal.toFixed(1)}) — High Probability Bearish Pullback PUT`);
-  } else if (rsiVal >= 50) {
-    bullConfluences += 1.0;
-    bullReasons.push(`RSI Bullish Momentum (${rsiVal.toFixed(1)}) above 50 midline`);
-  } else {
-    bearConfluences += 1.0;
-    bearReasons.push(`RSI Bearish Momentum (${rsiVal.toFixed(1)}) below 50 midline`);
-  }
-
-  // 6. MACD Line & Histogram
-  if (macdData.macd >= macdData.signal) {
-    bullConfluences += 0.8;
-    bullReasons.push(`MACD bullish posture (Histogram: ${macdData.histogram >= 0 ? '+' : ''}${macdData.histogram.toFixed(4)})`);
-  } else {
-    bearConfluences += 0.8;
-    bearReasons.push(`MACD bearish posture (Histogram: ${macdData.histogram.toFixed(4)})`);
-  }
-
-  // 7. Bollinger Bands
-  if (bbData.percent_b <= 0.18) {
-    bullConfluences += 1.2;
-    bullReasons.push('Price piercing lower Bollinger Band — Upward bounce expected');
-  } else if (bbData.percent_b >= 0.82) {
-    bearConfluences += 1.2;
-    bearReasons.push('Price piercing upper Bollinger Band — Rejection from ceiling expected');
-  }
-
-  // 8. Candlestick Patterns
-  for (const p of patterns) {
-    if (p.type === 'bullish') {
-      bullConfluences += p.strength;
-      bullReasons.push(`Candlestick Pattern: ${p.name} (Bullish Setup)`);
-    } else if (p.type === 'bearish') {
-      bearConfluences += p.strength;
-      bearReasons.push(`Candlestick Pattern: ${p.name} (Bearish Setup)`);
-    }
-  }
-
-  // 3. Direction & Confidence Decision
-  // User Rule: "after 75% model confidence show signal put or call otherwise wait"
-  // Provide CALL or PUT when accuracy/confluence reaches >= 75%! Otherwise provide WAIT!
-  let direction: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
-  let trade_quality = 'AWAITING 75% ACCURACY';
-  let quality_label = 'Waiting for 75% High-Accuracy Confluence';
   const matchedFrameworks: string[] = [];
 
-  const totalScore = bullConfluences + bearConfluences;
-  const bullPower = Math.round((bullConfluences / Math.max(totalScore, 1)) * 100);
-  const bearPower = 100 - bullPower;
-  const probableBias: 'CALL' | 'PUT' = bullPower >= 50 ? 'CALL' : 'PUT';
+  // Generate detailed reasoning
+  if (ema9 > ema21) bullReasons.push(`EMA 9 (${ema9.toFixed(2)}) > EMA 21 (${ema21.toFixed(2)}) Bullish Trend Alignment`);
+  else bearReasons.push(`EMA 9 (${ema9.toFixed(2)}) < EMA 21 (${ema21.toFixed(2)}) Bearish Trend Alignment`);
 
-  let watchTrigger = '';
-  if (probableBias === 'CALL') {
-    watchTrigger = `Watching for candle close above EMA 8 (${ema8.toFixed(2)}) & RSI > 50 to confirm CALL entry.`;
-  } else {
-    watchTrigger = `Watching for candle close below EMA 8 (${ema8.toFixed(2)}) & RSI < 50 to confirm PUT entry.`;
+  if (rsi >= 50) bullReasons.push(`RSI(14) at ${rsi.toFixed(1)} confirms positive upward momentum`);
+  else bearReasons.push(`RSI(14) at ${rsi.toFixed(1)} confirms downward selling momentum`);
+
+  if (adxData.adx >= 20) {
+    matchedFrameworks.push(`ADX (14) Trend Strength: ${adxData.adx} (${adxData.trend_strength})`);
   }
 
-  // Market Stability Check:
-  const isMarketUnstable = (adxData.adx < 14 && Math.abs(bullPower - bearPower) <= 8) || (totalScore < 1.0);
-
-  // Confidence calculation (reaches 75% to 98% based on multi-indicator confluence)
-  let confidence = 50;
-  if (probableBias === 'CALL') {
-    confidence = Math.min(Math.round(75 + (bullPower - 50) * 0.4 + bullConfluences * 2.0), 98);
-  } else {
-    confidence = Math.min(Math.round(75 + (bearPower - 50) * 0.4 + bearConfluences * 2.0), 98);
+  if (patterns.length > 0) {
+    patterns.forEach((p) => {
+      matchedFrameworks.push(`Candle Pattern: ${p.name}`);
+      if (p.type === 'bullish') bullReasons.push(`Pattern Confirmed: ${p.name}`);
+      if (p.type === 'bearish') bearReasons.push(`Pattern Confirmed: ${p.name}`);
+    });
   }
 
-  if (isMarketUnstable) {
-    confidence = Math.round(38 + Math.abs(bullPower - bearPower));
+  // False Signal Check Execution
+  let filterTriggered = false;
+  let filterReason: string | null = null;
+
+  if (conflictDetected) {
+    filterTriggered = true;
+    filterReason = `Conflicting Multi-Timeframe Alignment (5M: ${s5m} vs 15M: ${s15m})`;
+    waitReasons.push(filterReason);
+  } else if (isSideways) {
+    filterTriggered = true;
+    filterReason = `Sideways Market Chop Detected (ADX: ${adxData.adx} < 20)`;
+    waitReasons.push(filterReason);
+  } else if (isAbnormalVolatility) {
+    filterTriggered = true;
+    filterReason = `Abnormal Volatility Spike (${(atrData.current / atrData.average).toFixed(1)}x ATR) — High Risk`;
+    waitReasons.push(filterReason);
+  } else if (isFalseBreakout) {
+    filterTriggered = true;
+    filterReason = `False Breakout Wick Rejection at Key Level`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'CALL' && isCallWickRejection) {
+    filterTriggered = true;
+    filterReason = `Upper Wick Rejection near Resistance Level`;
+    waitReasons.push(filterReason);
+  } else if (dominantBias === 'PUT' && isPutWickRejection) {
+    filterTriggered = true;
+    filterReason = `Lower Wick Rejection near Support Level`;
+    waitReasons.push(filterReason);
+  } else if (dominantScore < 75) {
+    filterTriggered = true;
+    filterReason = `Setup Score (${dominantScore}/100) is below the minimum 75-point quantitative threshold`;
+    waitReasons.push(filterReason);
+  }
+
+  if (filterTriggered) {
     direction = 'WAIT';
-    trade_quality = 'UNSTABLE MARKET (CHOP)';
-    quality_label = 'Market Unstable / Rangebound — High Risk of False Breakout';
-    matchedFrameworks.push('Market Volatility Guard: Sideways Chop Filter');
-  } else if (confidence >= 75) {
-    // 75%+ High-Accuracy Threshold Achieved! Provide decisive CALL or PUT
-    direction = probableBias;
-    trade_quality = confidence >= 90 ? 'A+ 90%+ ACCURACY CONFIRMED' : 'HIGH ACCURACY (≥75% CONFIRMED)';
-    quality_label = `🔥 High Accuracy (${confidence}% / 8 Confluences) — Confirmed ${direction} Entry`;
-    matchedFrameworks.push('Binomo Strategy: 75%+ High Accuracy Confluence');
-    matchedFrameworks.push('Trend Momentum Pullback Confirmation');
-  } else {
-    // Below 75% threshold: Provide WAIT until 75% accuracy is confirmed
-    direction = 'WAIT';
-    trade_quality = 'AWAITING 75% CONFLUENCE';
-    quality_label = `Current Confluence: ${confidence}% (Requires 75% for Entry) — Awaiting Final Confirmation`;
-    matchedFrameworks.push('Strict 75% Accuracy Filter');
+    trade_quality = filterReason || 'AWAITING 75+ SCORE CONFLUENCE';
+  } else if (dominantScore >= 85) {
+    direction = dominantBias;
+    trade_quality = `STRONG_SETUP (${dominantScore} pts)`;
+    matchedFrameworks.push(`100-Point Quantitative Engine: Strong ${direction} (${dominantScore}/100)`);
+  } else if (dominantScore >= 75) {
+    direction = dominantBias;
+    trade_quality = `MODERATE_SETUP (${dominantScore} pts)`;
+    matchedFrameworks.push(`100-Point Quantitative Engine: Moderate ${direction} (${dominantScore}/100)`);
   }
 
-  // ── Candle-Slot Locking ("fluctuation ko bilkul khatam karo") ──
-  // The trading decision is locked to the specific candle slot (1m = 60s, 5m = 300s)
-  // so the signal stays 100% steady and never flickers between CALL, PUT, and WAIT
+  // 5. Candle-Slot Locking (guarantees zero flicker during current candle)
   const now = Date.now();
   const intervalSeconds = interval === '1min' ? 60 : interval === '15min' ? 900 : 300;
   const candleSlot = Math.floor(now / 1000 / intervalSeconds) * intervalSeconds;
   const latchKey = `${symbol.toUpperCase()}_${interval}`;
   const currentLatch = signalLatchMap.get(latchKey);
 
-  if (currentLatch && currentLatch.candleSlot === candleSlot) {
-    // Within the same candle, preserve the established signal decision!
+  if (!filterTriggered && currentLatch && currentLatch.candleSlot === candleSlot) {
     if (currentLatch.direction === 'CALL' || currentLatch.direction === 'PUT') {
       direction = currentLatch.direction;
-      confidence = currentLatch.confidence;
       trade_quality = currentLatch.trade_quality;
-      quality_label = currentLatch.quality_label;
-      if (currentLatch.reasons) {
-        bullReasons.splice(0, bullReasons.length, ...currentLatch.reasons.bullish);
-        bearReasons.splice(0, bearReasons.length, ...currentLatch.reasons.bearish);
-      }
-    } else if (direction === 'CALL' || direction === 'PUT') {
-      // If previous was WAIT but now clear breakout confirmed, lock to CALL or PUT!
-      signalLatchMap.set(latchKey, {
-        candleSlot,
-        direction,
-        confidence,
-        trade_quality,
-        quality_label,
-        reasons: { bullish: [...bullReasons], bearish: [...bearReasons] },
-      });
     }
   } else {
-    // New candle slot has opened! Lock the new AI decision for this entire candle:
     signalLatchMap.set(latchKey, {
       candleSlot,
       direction,
-      confidence,
+      confidence: dominantScore,
       trade_quality,
-      quality_label,
-      reasons: { bullish: [...bullReasons], bearish: [...bearReasons] },
+      score_breakdown: scoreBreakdown,
+      reasons: { bullish: bullReasons, bearish: bearReasons, wait_reasons: waitReasons },
     });
   }
 
-  const secondsElapsed = Math.floor(now / 1000) % intervalSeconds;
-  const secondsRemaining = intervalSeconds - secondsElapsed;
-  const isFirst15 = secondsElapsed <= 15;
+  const bullPowerPct = Math.round((bullTotal / Math.max(bullTotal + bearTotal, 1)) * 100);
+  const bearPowerPct = 100 - bullPowerPct;
 
-  const recommended_action = direction === 'WAIT'
-    ? '⚠️ MARKET UNSTABLE: Sideways chop detected. Do not trade now — wait for market stabilization.'
-    : (isFirst15
-      ? `🔥 PRIME ENTRY: Execute ${direction} on Binomo NOW (Open Window Active: ${15 - secondsElapsed}s remaining)!`
-      : `⏱️ Trade Active: ${direction} in progress (${secondsRemaining}s remaining until candle close).`);
-
-  // Integrated Multi-AI Arbiter Ensemble (Google Gemini 1.5 + OpenAI GPT-4o + Deep Technical Engine)
-  const trapRisk = direction === 'WAIT'
-    ? 'HIGH'
-    : (direction === 'CALL'
-      ? (rsiVal > 72 ? 'MEDIUM' : 'LOW')
-      : (rsiVal < 28 ? 'MEDIUM' : 'LOW'));
-
-  const gemini_arbiter = {
-    status: 'active',
-    provider: 'multi-ai-ensemble',
-    approved: direction !== 'WAIT',
-    direction,
-    confidence,
-    trap_risk: trapRisk,
-    models: {
-      gemini: {
-        name: 'Google Gemini 1.5 Flash',
-        direction,
-        confidence: Math.min(confidence + 1, 95),
-        focus: 'Candle Price Action & EMA Momentum',
-        verdict: direction === 'WAIT' ? 'Chop Risk' : `Approved ${direction}`,
-      },
-      openai: {
-        name: 'OpenAI GPT-4o-mini',
-        direction,
-        trap_risk: trapRisk,
-        focus: 'Order Flow & Liquidity Trap Protection',
-        verdict: direction === 'WAIT' ? 'Avoid Trap' : `Approved ${direction} (Low Trap Risk)`,
-      },
-      technical_ai: {
-        name: 'Deep Technical AI Engine',
-        direction,
-        confluences: Math.round(Math.max(bullConfluences, bearConfluences)),
-        focus: 'RSI, ADX, Bollinger Bands & MACD Synergy',
-        verdict: direction === 'WAIT' ? 'Neutral' : `${Math.round(Math.max(bullConfluences, bearConfluences))}/8 Frameworks Aligned`,
-      },
-    },
-    consensus: direction === 'WAIT' ? 'UNSTABLE_MARKET' : '100% UNANIMOUS',
-    consensus_score: direction === 'WAIT' ? 42 : 100,
-    analysis_en: direction === 'WAIT'
-      ? `Multi-AI Ensemble (Google Gemini 1.5 + OpenAI GPT-4o + Deep Tech Engine) analyzed ${symbol} (${interval}) and flagged unstable sideways consolidation. Trading paused to avoid chop losses.`
-      : `Multi-AI Ensemble (Google Gemini 1.5 + OpenAI GPT-4o + Deep Tech Engine) unanimously confirmed ${direction} on ${symbol} (${interval}) with ${confidence}% accuracy. Zero fake-breakout trap risk detected, EMA 8/21 dynamic trend strongly supportive, and ADX momentum actively expanding.`,
-    analysis_hi: direction === 'WAIT'
-      ? `Sare AI models (Gemini + GPT-4o + Technical AI) ne market ko unstable / choppy paya hai. False breakout aur trap ka risk zyada hai, isliye abhi trade na lein.`
-      : `Sare AI models (Gemini 1.5 + GPT-4o + Deep Technical AI) ne ${direction} ko 100% confirm kiya hai (${confidence}% Accuracy). Price EMA 8/21 support/resistance ke sath aligned hai aur trap risk bilkul LOW hai. Agli candle open hote hi trade execute karein.`,
-    verdict: direction === 'WAIT' ? '⚠️ Multi-AI: Market Unstable (Wait)' : `🔥 Multi-AI Consensus: 100% UNANIMOUS ${direction} (${confidence}%)`,
+  const nextProbableSetup: NextProbableSetup = {
+    bias: dominantBias,
+    biasPercentage: Math.max(bullPowerPct, bearPowerPct),
+    bullishPower: bullPowerPct,
+    bearishPower: bearPowerPct,
+    watchTrigger:
+      dominantBias === 'CALL'
+        ? `Watching for candle close above EMA 9 (${ema9.toFixed(2)}) with RSI > 50 & ADX > 20`
+        : `Watching for candle close below EMA 9 (${ema9.toFixed(2)}) with RSI < 50 & ADX > 20`,
+    setupSummary:
+      direction === 'WAIT'
+        ? `Trade Paused: ${filterReason || 'Waiting for 75+ point confluence'}`
+        : `${direction} verified with ${dominantScore}/100 setup score. Low trap risk.`,
   };
 
   return {
     direction,
-    confidence,
+    confidence: dominantScore,
     trade_quality,
+    score_breakdown: scoreBreakdown,
+    market_regime: marketRegime,
+    false_signal_filter: {
+      isTriggered: filterTriggered,
+      reason: filterReason,
+      isSideways,
+      isAbnormalVolatility,
+      isFalseBreakout,
+      isWickRejection,
+    },
     entry_timing: {
-      rule_en: `Enter trade at the OPEN of the ${interval} candle within the first 10-15 seconds.`,
-      rule_hi: `Agli candle shuru hote hi pehle 10-15 seconds me trade lein (Candle Open Entry).`,
-      recommended_action,
-      entry_window: `First 15 seconds of candle open (00:00 - 00:15)`,
-      expiry_duration: `${interval === '1min' ? '1 Minute' : interval === '15min' ? '15 Minutes' : '5 Minutes'} (Fixed expiry)`,
-      confluence_count: Math.round(Math.max(bullConfluences, bearConfluences)),
-      quality_tier: trade_quality,
-      quality_label,
+      rule_en: `Execute at open of new candle (0-15s window). Fixed ${interval} expiry.`,
+      rule_hi: `Nayi candle open hote hi pehle 10-15 seconds me entry lein. Expiry: ${interval}.`,
+      recommended_action: direction === 'WAIT' ? 'Wait for valid setup' : `Execute ${direction}`,
+      entry_window: 'New Candle Open (0-15s)',
+      expiry_duration: `${interval} (Fixed)`,
+      confluence_count: dominantScore,
+      quality_tier: dominantScore >= 85 ? 'Strong Setup (85-100 pts)' : dominantScore >= 75 ? 'Moderate Setup (75-84 pts)' : 'Awaiting Threshold (<75 pts)',
+      quality_label: `${direction} Setup Score: ${dominantScore}/100 (${marketRegime})`,
       matched_frameworks: matchedFrameworks,
     },
-    confluence_score: Math.round((Math.max(bullConfluences, bearConfluences) / 7) * 100),
-    next_probable_setup: {
-      bias: probableBias,
-      biasPercentage: Math.max(bullPower, bearPower),
-      bullishPower: bullPower,
-      bearishPower: bearPower,
-      watchTrigger,
-      setupSummary: `Market is leaning ${probableBias} (${Math.max(bullPower, bearPower)}%). ${watchTrigger}`,
-    },
-    gemini_arbiter,
+    confluence_score: dominantScore,
+    next_probable_setup: nextProbableSetup,
     indicators: {
-      rsi: {
-        value: Math.round(rsiVal * 10) / 10,
-        signal: rsiVal < 35 ? 'oversold' : (rsiVal > 65 ? 'overbought' : (rsiVal > 50 ? 'bullish_momentum' : 'bearish_momentum')),
-      },
+      rsi: { value: Math.round(rsi * 10) / 10, signal: rsi >= 60 ? 'Bullish' : rsi <= 40 ? 'Bearish' : 'Neutral' },
       macd: {
         macd: Math.round(macdData.macd * 1000) / 1000,
         signal_line: Math.round(macdData.signal * 1000) / 1000,
         histogram: Math.round(macdData.histogram * 1000) / 1000,
-        crossover: macdData.macd > macdData.signal ? 'bullish' : 'bearish',
+        crossover: macdData.crossover,
       },
       ema: {
-        ema8: Math.round(ema8 * 100) / 100,
         ema9: Math.round(ema9 * 100) / 100,
         ema21: Math.round(ema21 * 100) / 100,
-        ema28: Math.round(ema28 * 100) / 100,
         ema50: Math.round(ema50 * 100) / 100,
-        trend: ema8 > ema21 ? 'bullish' : 'bearish',
+        ema200: Math.round(ema200 * 100) / 100,
+        trend: ema9 > ema21 ? 'BULLISH' : 'BEARISH',
       },
-      adx: {
-        adx: adxData.adx,
-        plus_di: adxData.plus_di,
-        minus_di: adxData.minus_di,
-        trend_strength: adxData.adx > 25 ? 'Strong Trend' : 'Range / Chop',
+      sma: {
+        sma50: Math.round(sma50 * 100) / 100,
+        sma200: Math.round(sma200 * 100) / 100,
+        trend: currentPrice > sma50 ? 'BULLISH' : 'BEARISH',
       },
-      awesome_oscillator: aoData,
       bollinger: {
         upper: Math.round(bbData.upper * 100) / 100,
         middle: Math.round(bbData.middle * 100) / 100,
         lower: Math.round(bbData.lower * 100) / 100,
         width: Math.round(bbData.width * 100) / 100,
         percent_b: Math.round(bbData.percent_b * 100) / 100,
-        signal: bbData.percent_b <= 0.15 ? 'bounce_lower' : (bbData.percent_b >= 0.85 ? 'rejection_upper' : 'middle'),
+        signal: bbData.percent_b > 0.8 ? 'Overbought' : bbData.percent_b < 0.2 ? 'Oversold' : 'Neutral',
+      },
+      adx: adxData,
+      atr: {
+        value: Math.round(atrData.current * 10000) / 10000,
+        isSpike: isAbnormalVolatility,
+      },
+      stochastic_rsi: stochRsiData,
+      vwap: {
+        value: vwapValue ? Math.round(vwapValue * 100) / 100 : null,
+        position: vwapValue ? (currentPrice >= vwapValue ? 'Above VWAP' : 'Below VWAP') : 'N/A',
       },
       support_resistance: {
-        nearest_support: Math.round(Math.min(...lows.slice(-15)) * 100) / 100,
-        nearest_resistance: Math.round(Math.max(...highs.slice(-15)) * 100) / 100,
-        position: 'calculated',
+        nearest_support: srData.nearestSupport,
+        nearest_resistance: srData.nearestResistance,
+        position: srData.position,
       },
       stochastic: {
-        k: Math.round(stochData.k * 10) / 10,
-        d: Math.round(stochData.d * 10) / 10,
-        signal: stochData.k < 20 ? 'oversold' : (stochData.k > 80 ? 'overbought' : 'neutral'),
+        k: stochRsiData.k,
+        d: stochRsiData.d,
+        signal: stochRsiData.signal,
       },
     },
     reasons: {
       bullish: bullReasons,
       bearish: bearReasons,
+      wait_reasons: waitReasons,
     },
     patterns,
-    analysis_horizon: '5 minutes',
+    timeframe_alignment: {
+      '1m': dominantBias,
+      '5m': s5m || dominantBias,
+      '15m': s15m || dominantBias,
+      isAligned: !conflictDetected,
+      conflictDetected,
+    },
+    analysis_horizon: interval,
     timestamp: new Date().toISOString(),
-    disclaimer: 'Signal based on technical analysis confluence only. Never trade without money management.',
+    disclaimer,
   };
 }
