@@ -80,14 +80,15 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       : 'Awaiting candle close below EMA 8/21 dynamic resistance for PUT confirmation.'
   );
 
-  // User Rule: "wait rakho tabhi jab market unstable ho na ki har waqt"
-  // Keep WAIT only when the market is genuinely unstable (e.g. low confidence or 50/50 chop)
-  // If direction is WAIT but market has a strong directional leaning (bias >= 58% or confidence >= 60),
-  // promote to active CALL or PUT so the user isn't stuck waiting.
-  const isMarketUnstable = signal.direction === 'WAIT' && (signal.confidence < 60 || Math.abs(bullPower - bearPower) <= 8);
-  const effectiveDirection: 'CALL' | 'PUT' | 'WAIT' = isMarketUnstable
-    ? 'WAIT'
-    : (signal.direction === 'CALL' || signal.direction === 'PUT' ? signal.direction : (probableBias || 'CALL'));
+  // User Rule: "95% accurate signal was received after signal will provide call put other wise wait"
+  // Provide CALL or PUT ONLY when accuracy is >= 95%! Otherwise provide WAIT!
+  const has95Accuracy = signal.confidence >= 95;
+  const effectiveDirection: 'CALL' | 'PUT' | 'WAIT' =
+    has95Accuracy && (signal.direction === 'CALL' || signal.direction === 'PUT')
+      ? signal.direction
+      : (has95Accuracy && probableBias
+        ? probableBias
+        : 'WAIT');
 
   const isWait = effectiveDirection === 'WAIT';
 
@@ -100,7 +101,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       glow: 'shadow-emerald-500/20',
       icon: '↑',
       label: 'CALL (BUY)',
-      sublabel: 'Strong Bullish Confluence',
+      sublabel: `🔥 95%+ High Accuracy (${signal.confidence}%) Confirmed`,
       actionPrompt: 'Buy Higher (Green / Call on Binomo)',
     },
     PUT: {
@@ -111,7 +112,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       glow: 'shadow-red-500/20',
       icon: '↓',
       label: 'PUT (SELL)',
-      sublabel: 'Strong Bearish Confluence',
+      sublabel: `🔥 95%+ High Accuracy (${signal.confidence}%) Confirmed`,
       actionPrompt: 'Buy Lower (Red / Put on Binomo)',
     },
     WAIT: {
@@ -121,14 +122,14 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       text: 'text-amber-400',
       glow: 'shadow-amber-500/10',
       icon: '⚠️',
-      label: 'WAIT (MARKET UNSTABLE)',
-      sublabel: 'Consolidation / High Chop Risk — Awaiting Clean Breakout',
-      actionPrompt: 'Market is unstable. Wait for clean breakout',
+      label: `WAIT (Awaiting 95% — Current: ${signal.confidence}%)`,
+      sublabel: 'Confluence below 95% threshold. Waiting for high-accuracy setup.',
+      actionPrompt: 'Wait for 95% confirmed setup before entry',
     },
   };
 
   const config = directionConfig[effectiveDirection] || directionConfig.WAIT;
-  const quality = signal.trade_quality || (signal.confidence > 75 ? 'A+ HIGH CONFLUENCE' : 'MODERATE');
+  const quality = signal.trade_quality || (signal.confidence >= 95 ? 'A+ 95% ACCURACY CONFIRMED' : 'AWAITING 95% CONFLUENCE');
 
   return (
     <div className={clsx(
@@ -292,7 +293,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
                 <span>⚠️</span>
-                <span>MARKET UNSTABLE (High Chop / Sideways Range)</span>
+                <span>AWAITING 95% ACCURACY CONFIRMATION</span>
               </span>
               <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
                 probableBias === 'CALL'

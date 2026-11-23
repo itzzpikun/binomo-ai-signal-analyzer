@@ -52,13 +52,13 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
           ? (currentSignal.next_probable_setup.bias as 'CALL' | 'PUT')
           : null);
 
-    // User Rule: "nofitication tabhi aye jaab accuracy aur 3no ka eak dum sahi aye"
-    // 1. Current viewed asset (check if 1m, 5m, 15m all match AND accuracy >= 88%)
+    // User Rule: "95% accurate signal was received after signal will provide call put other wise wait"
+    // 1. Current viewed asset (check if 1m, 5m, 15m all match AND accuracy >= 95%)
     if (
       currentSignal &&
       effCurrentDir &&
       (currentSignal as any)?.timeframe_alignment?.isTripleConfirmed &&
-      currentSignal.confidence >= 88
+      currentSignal.confidence >= 95
     ) {
       const ageMs = now - new Date(currentSignal.timestamp).getTime();
       if (ageMs < 30_000) {
@@ -72,11 +72,11 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
       }
     }
 
-    // 2. Scanned multi-assets (backend /api/scan/all strictly filters to 1m+5m+15m all matched AND accuracy >= 88%)
+    // 2. Scanned multi-assets (backend /api/scan/all strictly filters to 1m+5m+15m all matched AND accuracy >= 95%)
     for (const sig of multiSignals) {
       if (
         (sig.direction === 'CALL' || sig.direction === 'PUT') &&
-        sig.confidence >= 88 &&
+        sig.confidence >= 95 &&
         (sig.trade_quality?.includes('TRIPLE') ||
           (sig.timeframes?.['1m'] === sig.direction &&
            sig.timeframes?.['5m'] === sig.direction &&
@@ -151,7 +151,7 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
           </span>
           <span className="hidden sm:inline text-gray-500">•</span>
           <span className="text-gray-400 hidden sm:inline">
-            Auto-notifies ONLY when 1M, 5M & 15M ALL 3 agree AND AI Accuracy is ≥88%
+            Auto-notifies ONLY when 1M, 5M & 15M ALL 3 agree AND AI Accuracy is ≥95%
           </span>
         </div>
         {!hasPermission && (

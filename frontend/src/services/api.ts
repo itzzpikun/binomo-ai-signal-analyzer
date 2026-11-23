@@ -21,6 +21,22 @@ const apiClient = axios.create({
   },
 });
 
+// Request interceptor: Automatically attach stored AI provider keys
+apiClient.interceptors.request.use((config) => {
+  try {
+    const rawKeys = localStorage.getItem('binomo_ai_keys');
+    if (rawKeys) {
+      const keys = JSON.parse(rawKeys);
+      if (keys.geminiKey) config.headers['x-gemini-key'] = keys.geminiKey;
+      if (keys.openaiKey) config.headers['x-openai-key'] = keys.openaiKey;
+      if (keys.groqKey) config.headers['x-groq-key'] = keys.groqKey;
+      if (keys.deepseekKey) config.headers['x-deepseek-key'] = keys.deepseekKey;
+      if (keys.openrouterKey) config.headers['x-openrouter-key'] = keys.openrouterKey;
+    }
+  } catch {}
+  return config;
+});
+
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => response,
@@ -234,6 +250,16 @@ export const getPerformance = async (): Promise<PerformanceSummary> => {
   return response.data;
 };
 
+export const testAIKey = async (provider: string, apiKey: string) => {
+  const response = await apiClient.post('/api/ai/test-key', { provider, apiKey });
+  return response.data;
+};
+
+export const getAIProviders = async () => {
+  const response = await apiClient.get('/api/ai/providers');
+  return response.data;
+};
+
 // Namespace object for convenience (api.getCandles, api.analyzeSignal, etc.)
 export const api = {
   getCandles: (symbol: string, interval: TimeInterval, outputsize = 100) =>
@@ -253,6 +279,8 @@ export const api = {
   scanAllAssets: (interval = '1min') => scanAllAssets(interval),
   runBacktest: (params: BacktestParams) => runBacktest(params),
   getPerformance: () => getPerformance(),
+  testAIKey: (provider: string, apiKey: string) => testAIKey(provider, apiKey),
+  getAIProviders: () => getAIProviders(),
 };
 
 export default apiClient;

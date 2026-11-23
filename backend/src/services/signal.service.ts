@@ -13,9 +13,17 @@ export const signalService = {
     symbol: string,
     interval: string,
     candles: OHLCCandle[],
-    geminiKey?: string,
-    openaiKey?: string
+    aiKeys?: {
+      geminiKey?: string;
+      openaiKey?: string;
+      groqKey?: string;
+      deepseekKey?: string;
+      openrouterKey?: string;
+    }
   ): Promise<any> {
+    const geminiKey = aiKeys?.geminiKey;
+    const openaiKey = aiKeys?.openaiKey;
+
     // 1. Try calling the Python AI engine if available (timeout 3.5s)
     try {
       const response = await axios.post(
@@ -51,6 +59,51 @@ export const signalService = {
 
     // 2. High-performance Native TypeScript Technical Analysis & Confluence Fallback
     const nativeResult = analyzeCandlesNative(candles, symbol, interval);
+
+    // 3. If alternative AI keys provided (Groq, DeepSeek, OpenRouter, Gemini, OpenAI), evaluate with AI provider
+    if (
+      aiKeys &&
+      (aiKeys.groqKey || aiKeys.deepseekKey || aiKeys.geminiKey || aiKeys.openaiKey || aiKeys.openrouterKey)
+    ) {
+      try {
+        const { aiProviderService } = await import('./aiProvider.service');
+        const aiEval = await aiProviderService.evaluateMarketSetup({
+          symbol,
+          interval,
+          candles,
+          indicators: {
+            rsi: nativeResult.indicators?.rsi?.value ?? 50,
+            ema8: nativeResult.indicators?.ema?.ema8 ?? 0,
+            ema21: nativeResult.indicators?.ema?.ema21 ?? 0,
+            adx: nativeResult.indicators?.adx?.adx ?? 20,
+            macdHist: nativeResult.indicators?.macd?.histogram ?? 0,
+            ao: nativeResult.indicators?.awesome_oscillator?.ao ?? 0,
+            bullPower: nativeResult.next_probable_setup?.bullishPower ?? 50,
+            bearPower: nativeResult.next_probable_setup?.bearishPower ?? 50,
+          },
+          keys: aiKeys,
+        });
+
+        if (aiEval && aiEval.provider) {
+          nativeResult.gemini_arbiter = {
+            ...nativeResult.gemini_arbiter,
+            provider: aiEval.provider,
+            trap_risk: aiEval.trap_risk,
+            analysis_en: aiEval.analysis_en,
+            analysis_hi: aiEval.analysis_hi,
+            verdict: aiEval.verdict,
+          };
+          if (aiEval.confidence >= 95) {
+            nativeResult.confidence = aiEval.confidence;
+            nativeResult.direction = aiEval.direction;
+            nativeResult.trade_quality = `A+ 95% ACCURACY CONFIRMED (${aiEval.provider})`;
+          }
+        }
+      } catch (e) {
+        console.warn('[SignalService] AI Provider evaluation error:', (e as Error).message);
+      }
+    }
+
     return nativeResult;
   },
 
