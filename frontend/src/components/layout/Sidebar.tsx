@@ -126,7 +126,7 @@ const Sidebar: React.FC = () => {
         </button>
         <div className="hidden md:flex items-center justify-between text-[10px] text-gray-500 mt-2 px-1">
           <span className="capitalize">{binomoAccountType}</span>
-          <span className="text-yellow-400 font-bold">{binomoCurrency} {binomoBalance.toLocaleString()}</span>
+          <span className="text-yellow-400 font-bold">{binomoCurrency} {binomoBalance !== undefined ? binomoBalance.toLocaleString() : '---'}</span>
         </div>
       </div>
 
