@@ -454,7 +454,13 @@ def internal_error(e):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.getenv("PORT") or os.getenv("FLASK_PORT") or 8000)
+    # If in Docker (/app/backend exists), Node runs on PORT (5001/10000), so Python runs on 8000.
+    # If in native Render Python, Python runs on PORT.
+    if os.path.exists("/app/backend"):
+        port = int(os.getenv("FLASK_PORT", 8000))
+    else:
+        port = int(os.getenv("PORT") or os.getenv("FLASK_PORT") or 8000)
+
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     logger.info("Starting Unified Binomo Engine on port %d (debug=%s)", port, debug)
     app.run(host="0.0.0.0", port=port, debug=debug)
