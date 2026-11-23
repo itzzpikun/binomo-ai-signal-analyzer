@@ -547,21 +547,21 @@ def generate_signal(
         quality_label = "Indicator Conflict — Wait for Breakout"
         all_bear_reasons.append("⚠️ Conflicting signals: Trend vs Oscillator divergence")
     elif (
-        (weighted_sum >= 5.0 and bull_confirmations >= 4 and trend_direction >= 0)
+        (weighted_sum >= 2.5 and bull_confirmations >= 3 and trend_direction >= 0)
         or (has_pullback_up and bull_confirmations >= 3)
         or (has_sr_reversal_up and bull_confirmations >= 3)
     ):
         direction = "CALL"
-        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bull_confirmations >= 5) else "A HIGH CONFLUENCE"
+        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bull_confirmations >= 4) else "A HIGH CONFLUENCE"
         framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
         quality_label = f"High-Probability Bullish ({bull_confirmations}/10 Confluences){framework_tag}"
     elif (
-        (weighted_sum <= -5.0 and bear_confirmations >= 4 and trend_direction <= 0)
+        (weighted_sum <= -2.5 and bear_confirmations >= 3 and trend_direction <= 0)
         or (has_pullback_down and bear_confirmations >= 3)
         or (has_sr_reversal_down and bear_confirmations >= 3)
     ):
         direction = "PUT"
-        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bear_confirmations >= 5) else "A HIGH CONFLUENCE"
+        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bear_confirmations >= 4) else "A HIGH CONFLUENCE"
         framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
         quality_label = f"High-Probability Bearish ({bear_confirmations}/10 Confluences){framework_tag}"
     else:
@@ -695,12 +695,33 @@ def generate_signal(
     nearest_support = max((s for s in supports if s <= close), default=None)
     nearest_resistance = min((r for r in resistances if r >= close), default=None)
 
+    # ── Next Probable Setup Calculation ───────────────────────────────────────
+    total_confs = bull_confirmations + bear_confirmations
+    bull_pct = round((bull_confirmations / max(total_confs, 1)) * 100, 1)
+    bear_pct = round(100.0 - bull_pct, 1)
+    probable_bias = "CALL" if bull_pct >= 50 else "PUT"
+    bias_pct = max(bull_pct, bear_pct)
+    watch_trigger = (
+        f"Watching for price bounce above EMA 8/21 ({ema8:.2f}) & RSI > 50 for confirmed CALL entry."
+        if probable_bias == "CALL"
+        else f"Watching for price rejection below EMA 8/21 ({ema8:.2f}) & RSI < 50 for confirmed PUT entry."
+    )
+    next_probable_setup = {
+        "bias": probable_bias,
+        "biasPercentage": bias_pct,
+        "bullishPower": bull_pct,
+        "bearishPower": bear_pct,
+        "watchTrigger": watch_trigger,
+        "setupSummary": f"Market is leaning {probable_bias} ({bias_pct}%). {watch_trigger}",
+    }
+
     return {
         "direction": direction,
         "confidence": confidence,
         "trade_quality": trade_quality,
         "entry_timing": entry_timing_info,
         "confluence_score": round((confluence_count / 10.0) * 100.0, 1),
+        "next_probable_setup": next_probable_setup,
         "gemini_arbiter": gemini_result,
         "indicators": {
             "rsi": {

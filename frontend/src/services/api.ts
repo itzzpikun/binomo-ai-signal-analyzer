@@ -152,6 +152,7 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     trade_quality: sig.trade_quality,
     entry_timing: sig.entry_timing,
     confluence_score: sig.confluence_score,
+    next_probable_setup: sig.next_probable_setup || data.next_probable_setup,
     gemini_arbiter: sig.gemini_arbiter,
   };
 };

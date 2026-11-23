@@ -1,11 +1,12 @@
 // ============================================================
-// src/services/signal.service.ts — Calls Python AI engine
+// src/services/signal.service.ts — Calls Python AI engine with Native Fallback
 // ============================================================
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import ENV from '../config/env';
 import { Signal, ISignal } from '../models/Signal.model';
 import { Performance } from '../models/Performance.model';
-import type { OHLCCandle, SignalResult, Direction, Outcome } from '../types';
+import type { OHLCCandle, SignalResult, Outcome } from '../types';
+import { analyzeCandlesNative } from './nativeSignalEngine';
 
 export const signalService = {
   async analyzeCandles(
@@ -14,7 +15,8 @@ export const signalService = {
     candles: OHLCCandle[],
     geminiKey?: string,
     openaiKey?: string
-  ): Promise<SignalResult> {
+  ): Promise<any> {
+    // 1. Try calling the Python AI engine if available (timeout 3.5s)
     try {
       const response = await axios.post(
         `${ENV.AI_ENGINE_URL}/analyze`,
@@ -26,7 +28,7 @@ export const signalService = {
           openai_api_key: openaiKey,
         },
         {
-          timeout: 30000,
+          timeout: 3500,
           headers: {
             'Content-Type': 'application/json',
             ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {}),
@@ -34,20 +36,22 @@ export const signalService = {
           },
         }
       );
-      return response.data as SignalResult;
-    } catch (err) {
-      const axiosErr = err as AxiosError;
-      if (axiosErr.response) {
-        throw Object.assign(
-          new Error(`AI engine error ${axiosErr.response.status}: ${JSON.stringify(axiosErr.response.data)}`),
-          { statusCode: 502, status: 'AI_ENGINE_ERROR' }
-        );
+      if (response.data && (response.data.direction || response.data.signal)) {
+        const res = response.data;
+        // Ensure next_probable_setup is present
+        if (!res.next_probable_setup) {
+          const native = analyzeCandlesNative(candles, symbol, interval);
+          res.next_probable_setup = native.next_probable_setup;
+        }
+        return res;
       }
-      throw Object.assign(
-        new Error(`Cannot reach AI engine at ${ENV.AI_ENGINE_URL}: ${(err as Error).message}`),
-        { statusCode: 503, status: 'AI_ENGINE_UNAVAILABLE' }
-      );
+    } catch (err) {
+      console.log(`[SignalService] Python AI engine at ${ENV.AI_ENGINE_URL} not available (${(err as Error).message}) — using high-performance Native Engine`);
     }
+
+    // 2. High-performance Native TypeScript Technical Analysis & Confluence Fallback
+    const nativeResult = analyzeCandlesNative(candles, symbol, interval);
+    return nativeResult;
   },
 
   async saveSignal(

@@ -56,6 +56,7 @@ export const signalController = {
           : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50),
         indicators: rawResult.indicators || rawResult.signal?.indicators || {},
         reasons: rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] },
+        next_probable_setup: rawResult.next_probable_setup,
       };
 
       const saved = await signalService.saveSignal(symbol, interval, finalSignal);

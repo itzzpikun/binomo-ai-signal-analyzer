@@ -62,6 +62,15 @@ export interface GeminiArbiterResult {
   verdict: string;
 }
 
+export interface NextProbableSetup {
+  bias: 'CALL' | 'PUT';
+  biasPercentage: number;
+  bullishPower: number;
+  bearishPower: number;
+  watchTrigger: string;
+  setupSummary: string;
+}
+
 export interface Signal {
   id?: string;
   symbol: string;
@@ -76,6 +85,7 @@ export interface Signal {
   trade_quality?: string;
   entry_timing?: EntryTiming;
   confluence_score?: number;
+  next_probable_setup?: NextProbableSetup;
   gemini_arbiter?: GeminiArbiterResult;
 }
 

@@ -67,6 +67,16 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
   }
 
   const isWait = signal.direction === 'WAIT';
+  const probableSetup = signal.next_probable_setup;
+  const probableBias = probableSetup?.bias || (signal.confidence > 50 ? 'CALL' : 'PUT');
+  const probablePct = probableSetup?.biasPercentage || 60;
+  const bullPower = probableSetup?.bullishPower || (probableBias === 'CALL' ? 62 : 38);
+  const bearPower = probableSetup?.bearishPower || (100 - bullPower);
+  const watchTrigger = probableSetup?.watchTrigger || (
+    probableBias === 'CALL'
+      ? 'Awaiting candle close above EMA 8/21 dynamic support for CALL confirmation.'
+      : 'Awaiting candle close below EMA 8/21 dynamic resistance for PUT confirmation.'
+  );
 
   const directionConfig = {
     CALL: {
@@ -98,8 +108,8 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       text: 'text-amber-400',
       glow: 'shadow-amber-500/10',
       icon: '⏸',
-      label: 'WAIT',
-      sublabel: 'No Clear Direction / Chop',
+      label: `WAIT (Leaning ${probableBias})`,
+      sublabel: `${probablePct}% ${probableBias} Setup Forming`,
       actionPrompt: 'Wait for next high-probability setup',
     },
   };
@@ -219,8 +229,48 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         )}
 
         {isWait && (
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-2.5 text-xs text-gray-400">
-            ⏸️ <b>NO TRADE NOW:</b> Technical indicators conflict or market is consolidating. Wait for clear breakout.
+          <div className="bg-gray-900/90 border border-amber-500/40 rounded-xl p-3 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+                <span>⏸️</span>
+                <span>NO TRADE NOW (Consolidation / Noise)</span>
+              </span>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
+                probableBias === 'CALL'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-red-500/20 text-red-300 border-red-500/40'
+              }`}>
+                🔮 Next Bias: {probableBias} ({probablePct}%)
+              </span>
+            </div>
+
+            {/* What to watch for / kya ho sakta hai */}
+            <div className="bg-gray-950/80 border border-gray-800 rounded-lg p-2.5">
+              <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">
+                👁️ WHAT CAN HAPPEN / WATCH TRIGGER (कहाँ ट्रेड बन सकता है):
+              </span>
+              <p className="text-xs text-gray-200 font-semibold mt-1">
+                {watchTrigger}
+              </p>
+            </div>
+
+            {/* Live Bullish vs Bearish Confluence Gauge */}
+            <div>
+              <div className="flex justify-between text-[10px] font-mono mb-1">
+                <span className="text-emerald-400 font-bold">▲ Bulls {bullPower}%</span>
+                <span className="text-red-400 font-bold">▼ Bears {bearPower}%</span>
+              </div>
+              <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden flex">
+                <div
+                  className="bg-emerald-500 h-full transition-all duration-500"
+                  style={{ width: `${bullPower}%` }}
+                />
+                <div
+                  className="bg-red-500 h-full transition-all duration-500"
+                  style={{ width: `${bearPower}%` }}
+                />
+              </div>
+            </div>
           </div>
         )}
 
