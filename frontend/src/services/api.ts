@@ -187,6 +187,11 @@ export interface MultiAssetSignal {
   direction: 'CALL' | 'PUT';
   confidence: number;
   trade_quality: string;
+  timeframes?: {
+    '1m': string;
+    '5m': string;
+    '15m': string;
+  };
   entry_timing: any;
   next_probable_setup?: any;
   reasons?: {

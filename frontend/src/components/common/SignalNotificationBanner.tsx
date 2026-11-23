@@ -1,7 +1,8 @@
 // ============================================================
 // src/components/common/SignalNotificationBanner.tsx
 // High-visibility live signal pop-up notification with one-click Binomo trade execution
-// Fresh-only alerts: Only shows newly detected signals & automatically clears after 25s
+// STRICT 3-TIMEFRAME FILTER:
+// ONLY notifies when 1M, 5M, and 15M ALL 3 agree on the EXACT SAME direction (CALL or PUT)
 // ============================================================
 import React, { useState, useEffect, useRef } from 'react';
 import type { Signal } from '../../types';
@@ -14,7 +15,7 @@ interface SignalNotificationBannerProps {
   onSelectAsset?: (symbol: string) => void;
 }
 
-interface FreshAlert {
+interface TripleConfirmedAlert {
   symbol: string;
   direction: 'CALL' | 'PUT';
   confidence: number;
@@ -27,7 +28,7 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
   multiSignals = [],
   onSelectAsset,
 }) => {
-  const [activeAlert, setActiveAlert] = useState<FreshAlert | null>(null);
+  const [activeAlert, setActiveAlert] = useState<TripleConfirmedAlert | null>(null);
   const seenSignalsRef = useRef<Set<string>>(new Set());
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -39,19 +40,20 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
     );
   });
 
-  // Check for newly arriving signals (only fresh within last 25 seconds)
+  // Check for newly arriving signals (only fresh and ONLY 3-timeframe confirmed!)
   useEffect(() => {
     const now = Date.now();
-    const freshCandidates: FreshAlert[] = [];
+    const confirmedCandidates: TripleConfirmedAlert[] = [];
 
-    // 1. Current viewed asset
+    // 1. Current viewed asset (check if 1m, 5m, 15m all match)
     if (
       currentSignal &&
-      (currentSignal.direction === 'CALL' || currentSignal.direction === 'PUT')
+      (currentSignal.direction === 'CALL' || currentSignal.direction === 'PUT') &&
+      (currentSignal as any)?.timeframe_alignment?.isTripleConfirmed
     ) {
       const ageMs = now - new Date(currentSignal.timestamp).getTime();
-      if (ageMs < 25_000) {
-        freshCandidates.push({
+      if (ageMs < 30_000) {
+        confirmedCandidates.push({
           symbol: currentSignal.symbol,
           direction: currentSignal.direction,
           confidence: currentSignal.confidence,
@@ -61,12 +63,12 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
       }
     }
 
-    // 2. Scanned multi-assets
+    // 2. Scanned multi-assets (backend /api/scan/all already strictly filters to 1m+5m+15m all matched)
     for (const sig of multiSignals) {
       if (sig.direction === 'CALL' || sig.direction === 'PUT') {
         const ageMs = now - new Date(sig.timestamp).getTime();
-        if (ageMs < 25_000) {
-          freshCandidates.push({
+        if (ageMs < 30_000) {
+          confirmedCandidates.push({
             symbol: sig.symbol,
             direction: sig.direction,
             confidence: sig.confidence,
@@ -77,8 +79,8 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
       }
     }
 
-    // Find the latest, unseen signal
-    const newFresh = freshCandidates.find((s) => {
+    // Find the latest, unseen triple-confirmed signal
+    const newFresh = confirmedCandidates.find((s) => {
       const key = `${s.symbol}_${s.direction}_${s.timestamp.slice(0, 16)}`;
       return !seenSignalsRef.current.has(key);
     });
@@ -93,11 +95,11 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
       // Set active pop-up banner
       setActiveAlert(newFresh);
 
-      // Automatically auto-dismiss after 25 seconds ("old sab automatically hata do")
+      // Automatically auto-dismiss after 30 seconds
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         setActiveAlert(null);
-      }, 25_000);
+      }, 30_000);
     }
   }, [currentSignal, multiSignals]);
 
@@ -122,18 +124,18 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
     setActiveAlert(null);
   };
 
-  // If no fresh active alert, show the clean slim status bar
+  // If no active alert, show the clean slim status bar with 3-timeframe indicator
   if (!activeAlert) {
     return (
       <div className="w-full flex items-center justify-between px-3 py-1 bg-gray-900/40 border-b border-gray-800/60 text-[11px] text-gray-400">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-semibold text-gray-300">
-            26 Binomo OTC Markets Scanned Live
+            Triple-Timeframe Scanner Active (1M + 5M + 15M)
           </span>
           <span className="hidden sm:inline text-gray-500">•</span>
           <span className="text-gray-400 hidden sm:inline">
-            Auto-notifies instantly with sound ONLY when a new CALL / PUT signal appears
+            Auto-notifies ONLY when 1M, 5M, and 15M ALL 3 agree on the SAME signal
           </span>
         </div>
         {!hasPermission && (
@@ -170,8 +172,9 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-black/50 text-yellow-300 border border-yellow-500/50">
-                🔔 NEW LIVE SIGNAL
+              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-black/60 text-yellow-300 border border-yellow-500/60 flex items-center gap-1">
+                <span>🔥</span>
+                <span>TRIPLE TIMEFRAME CONFIRMED: 1M + 5M + 15M ALL {activeAlert.direction}</span>
               </span>
               <span className="text-white font-black text-sm tracking-wide">
                 {activeAlert.symbol}
@@ -193,8 +196,8 @@ export const SignalNotificationBanner: React.FC<SignalNotificationBannerProps> =
               )}
             </div>
             <p className="text-gray-200 text-xs font-medium mt-0.5">
-              ⏱️ <b>Fresh 15s Candle Open Entry Window Active!</b>{' '}
-              {isCall ? 'Execute CALL (Higher / Green)' : 'Execute PUT (Lower / Red)'} on Binomo.
+              ⏱️ <b>100% 3-Timeframe Confluence Active!</b>{' '}
+              {isCall ? 'Execute CALL (Higher / Green)' : 'Execute PUT (Lower / Red)'} on Binomo within open window.
             </p>
           </div>
         </div>

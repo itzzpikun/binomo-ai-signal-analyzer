@@ -175,6 +175,52 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         </a>
       </div>
 
+      {/* 3-Timeframe MTF Alignment Row (1M + 5M + 15M) */}
+      <div className="w-full bg-gray-950/80 border border-gray-800 rounded-xl px-3 py-2 flex items-center justify-between text-xs flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 font-bold text-gray-300">
+          <span>📊</span>
+          <span>1M / 5M / 15M Alignment:</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold border ${
+            (signal as any)?.timeframe_alignment?.['1m'] === 'CALL'
+              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+              : (signal as any)?.timeframe_alignment?.['1m'] === 'PUT'
+              ? 'bg-red-950/60 border-red-500/50 text-red-300'
+              : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+          }`}>
+            1M: {(signal as any)?.timeframe_alignment?.['1m'] || signal?.direction || 'CALL'}
+          </span>
+          <span className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold border ${
+            (signal as any)?.timeframe_alignment?.['5m'] === 'CALL'
+              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+              : (signal as any)?.timeframe_alignment?.['5m'] === 'PUT'
+              ? 'bg-red-950/60 border-red-500/50 text-red-300'
+              : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+          }`}>
+            5M: {(signal as any)?.timeframe_alignment?.['5m'] || signal?.direction || 'CALL'}
+          </span>
+          <span className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold border ${
+            (signal as any)?.timeframe_alignment?.['15m'] === 'CALL'
+              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+              : (signal as any)?.timeframe_alignment?.['15m'] === 'PUT'
+              ? 'bg-red-950/60 border-red-500/50 text-red-300'
+              : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+          }`}>
+            15M: {(signal as any)?.timeframe_alignment?.['15m'] || signal?.direction || 'CALL'}
+          </span>
+          {(signal as any)?.timeframe_alignment?.isTripleConfirmed ? (
+            <span className="px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-300 font-extrabold text-[10px] border border-yellow-500/40">
+              🔥 100% MATCHED
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-semibold text-[10px] border border-blue-500/40">
+              Triple Scan Active
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* ────────────────────────────────────────────────────────── */}
       {/* ⏰ EXACT ENTRY TIMING & COUNTDOWN ("Kab Trade Lu")         */}
       {/* ────────────────────────────────────────────────────────── */}

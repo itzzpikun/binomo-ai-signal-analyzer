@@ -59,6 +59,29 @@ export const signalController = {
         next_probable_setup: rawResult.next_probable_setup,
       };
 
+      // Multi-Timeframe Alignment Check (1m, 5m, 15m)
+      try {
+        const marketDataService = (await import('../services/marketData.service')).default;
+        const { analyzeCandlesNative } = await import('../services/nativeSignalEngine');
+        const [c1m, c5m, c15m] = await Promise.all([
+          marketDataService.getCandles(symbol, '1min', 40),
+          marketDataService.getCandles(symbol, '5min', 40),
+          marketDataService.getCandles(symbol, '15min', 40),
+        ]);
+        const s1m = analyzeCandlesNative(c1m, symbol, '1min');
+        const s5m = analyzeCandlesNative(c5m, symbol, '5min');
+        const s15m = analyzeCandlesNative(c15m, symbol, '15min');
+
+        const allMatch = (s1m.direction === s5m.direction && s5m.direction === s15m.direction);
+        finalSignal.timeframe_alignment = {
+          '1m': s1m.direction,
+          '5m': s5m.direction,
+          '15m': s15m.direction,
+          isTripleConfirmed: allMatch && (s1m.direction === 'CALL' || s1m.direction === 'PUT'),
+          confirmedDirection: allMatch ? s1m.direction : null,
+        };
+      } catch {}
+
       const saved = await signalService.saveSignal(symbol, interval, finalSignal);
       res.status(200).json({
         status: 'OK',
