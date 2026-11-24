@@ -51,11 +51,14 @@ export const signalController = {
         (req.body as any).openrouter_api_key ||
         process.env.OPENROUTER_API_KEY;
 
-      // 1. Real-time data feed validation (Section 7)
+      // 1. Real-time data feed validation (Phase 1)
       const marketDataService = (await import('../services/marketData.service')).default;
       const validationReport = marketDataService.validateCandles(sanitizedCandles, symbol, interval);
 
-      // 2. Multi-Timeframe Confirmation (1M, 5M, 15M) (Section 2)
+      // Extract completed candles only (Phase 1 Requirement 9)
+      const completedCandles = marketDataService.getCompletedCandlesOnly(sanitizedCandles, interval);
+
+      // 2. Multi-Timeframe Confirmation (1M, 5M, 15M) (Phase 2)
       let s5mDir: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
       let s15mDir: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
       try {
@@ -63,25 +66,32 @@ export const signalController = {
           marketDataService.getCandles(symbol, '5min', 40),
           marketDataService.getCandles(symbol, '15min', 40),
         ]);
+        const comp5m = marketDataService.getCompletedCandlesOnly(c5m, '5min');
+        const comp15m = marketDataService.getCompletedCandlesOnly(c15m, '15min');
         const { analyzeCandlesNative } = await import('../services/nativeSignalEngine');
-        const s5m = analyzeCandlesNative(c5m, symbol, '5min');
-        const s15m = analyzeCandlesNative(c15m, symbol, '15min');
+        const s5m = analyzeCandlesNative(comp5m, symbol, '5min');
+        const s15m = analyzeCandlesNative(comp15m, symbol, '15min');
         s5mDir = s5m.direction;
         s15mDir = s15m.direction;
       } catch {}
 
-      // 3. Quantitative 100-Point Scoring Engine (Section 4)
+      // 3. Quantitative 100-Point Scoring Engine (Phase 3 & 4)
       const { analyzeCandlesNative } = await import('../services/nativeSignalEngine');
-      const nativeSignal = analyzeCandlesNative(sanitizedCandles, symbol, interval, {
+      const nativeSignal = analyzeCandlesNative(completedCandles, symbol, interval, {
         s5mDirection: s5mDir,
         s15mDirection: s15mDir,
       });
 
+      // 4. Loss Protection Check (Phase 7)
+      const riskService = (await import('../services/riskManagement.service')).default;
+      const riskAdvice = riskService.evaluateTradePermission();
+
       const finalSignal: any = {
         ...nativeSignal,
         data_quality: validationReport,
+        risk_advice: riskAdvice,
         timeframe_alignment: {
-          '1m': nativeSignal.direction === 'WAIT' ? nativeSignal.next_probable_setup.bias : nativeSignal.direction,
+          '1m': nativeSignal.direction === 'WAIT' ? nativeSignal.next_probable_setup?.bias || 'WAIT' : nativeSignal.direction,
           '5m': s5mDir,
           '15m': s15mDir,
           isAligned: s5mDir === s15mDir && s5mDir !== 'WAIT',
@@ -89,11 +99,21 @@ export const signalController = {
         },
       };
 
-      // If feed is stale or corrupted: strictly WAIT (Section 7)
+      // If feed is stale or corrupted: strictly WAIT (Phase 1)
       if (!validationReport.isValid) {
         finalSignal.direction = 'WAIT';
         finalSignal.trade_quality = validationReport.message;
         finalSignal.reasons.wait_reasons = [validationReport.message];
+      }
+
+      // If risk limits triggered (daily loss limit or consecutive losses cooldown) (Phase 7)
+      if (!riskAdvice.isTradePermitted) {
+        finalSignal.direction = 'WAIT';
+        finalSignal.trade_quality = riskAdvice.status;
+        finalSignal.reasons.wait_reasons = [
+          ...(finalSignal.reasons.wait_reasons || []),
+          riskAdvice.reason,
+        ];
       }
 
       // 4. Smart AI Ensemble (Section 3)

@@ -125,6 +125,9 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
 
   const config = directionConfig[effectiveDirection];
   const mtf = (signal as any).timeframe_alignment;
+  const dataQuality = (signal as any).data_quality;
+  const feedStatus: 'LIVE' | 'DELAYED' | 'DATA_UNAVAILABLE' = dataQuality?.feedStatus || 'LIVE';
+  const riskAdvice = (signal as any).risk_advice;
 
   return (
     <div
@@ -134,18 +137,37 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
         config.glow
       )}
     >
-      {/* Top Header: Symbol, Timeframe, Regime, Quality */}
+      {/* Top Header: Symbol, Timeframe, Feed Status, Regime, Quality */}
       <div className="flex items-center justify-between w-full border-b border-gray-800/80 pb-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold text-gray-200 text-sm">{signal.symbol}</span>
           <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">
             {signal.interval}
           </span>
+          {/* Feed Status Badge (Phase 1 & 8) */}
+          <span
+            className={clsx(
+              'text-[10px] font-mono font-bold px-2 py-0.5 rounded border flex items-center gap-1',
+              feedStatus === 'LIVE'
+                ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300'
+                : feedStatus === 'DELAYED'
+                ? 'bg-amber-950/70 border-amber-500/50 text-amber-300'
+                : 'bg-red-950/70 border-red-500/50 text-red-300'
+            )}
+          >
+            <span
+              className={clsx(
+                'w-1.5 h-1.5 rounded-full',
+                feedStatus === 'LIVE' ? 'bg-emerald-400' : feedStatus === 'DELAYED' ? 'bg-amber-400' : 'bg-red-400'
+              )}
+            />
+            {feedStatus}
+          </span>
           <span
             className={clsx(
               'text-[10px] font-mono font-bold px-2 py-0.5 rounded border',
               regime === 'TRENDING'
-                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                ? 'bg-blue-950/60 border-blue-500/40 text-blue-300'
                 : regime === 'VOLATILE'
                 ? 'bg-red-950/60 border-red-500/40 text-red-300'
                 : 'bg-amber-950/60 border-amber-500/40 text-amber-300'
@@ -156,7 +178,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
           {isAnalyzing && (
             <span className="text-[10px] text-blue-400 bg-blue-950/80 border border-blue-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
-              <span>Updating...</span>
+              <span>Analyzing...</span>
             </span>
           )}
         </div>
@@ -198,6 +220,28 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
           <span className="text-sm">↗</span>
         </a>
       </div>
+
+      {/* Risk Management Stake Advice (Phase 7 & 8) */}
+      {riskAdvice && (
+        <div
+          className={clsx(
+            'flex items-center justify-between px-3 py-1.5 rounded-lg border text-xs font-mono',
+            riskAdvice.isTradePermitted
+              ? 'bg-gray-950/80 border-gray-800 text-gray-300'
+              : 'bg-red-950/50 border-red-500/50 text-red-300'
+          )}
+        >
+          <span className="flex items-center gap-1.5">
+            <span>🛡️</span>
+            <span>
+              Risk Stake Cap: <b>${riskAdvice.recommendedStake?.toFixed(2) || '5.00'}</b> (0.5% max)
+            </span>
+          </span>
+          <span className="text-[10px] text-gray-400">
+            {riskAdvice.isTradePermitted ? 'Flat Stake • Anti-Martingale' : '🛑 Halted by Risk Engine'}
+          </span>
+        </div>
+      )}
 
       {/* 🔮 DEVELOPING MARKET BIAS: NEXT TRADE PREDICTION (Shown prominently during WAIT) */}
       {isWait && (
@@ -506,10 +550,26 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing = false }) 
         <ConfidenceBar confidence={score} direction={effectiveDirection} />
       </div>
 
-      {/* Disclaimers & Timestamp */}
-      <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-800/60">
-        <span>Signal Time: {format(new Date(signal.timestamp), 'HH:mm:ss')} UTC</span>
-        <span>Confluence: {score}/100 Points</span>
+      {/* Disclaimers & Timestamp (Phase 8) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-800/60 gap-1">
+        <div className="flex items-center gap-2">
+          <span>Signal: {format(new Date(signal.timestamp), 'HH:mm:ss')} UTC</span>
+          {dataQuality?.lastCandleTimestamp && (
+            <>
+              <span>•</span>
+              <span className="text-gray-400">
+                Last Candle: {format(new Date(dataQuality.lastCandleTimestamp), 'HH:mm:ss')}
+              </span>
+            </>
+          )}
+          {typeof dataQuality?.latencySeconds === 'number' && (
+            <>
+              <span>•</span>
+              <span className="text-gray-400">Latency: {dataQuality.latencySeconds}s</span>
+            </>
+          )}
+        </div>
+        <span>Quantitative Confluence: {score}/100 Pts</span>
       </div>
 
       {/* Binomo Platform Integration Modal */}

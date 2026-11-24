@@ -27,22 +27,33 @@ router.get('/all', analysisRateLimiter, async (_req: Request, res: Response) => 
           marketDataService.getCandles(symbol, '15min', 40),
         ]);
 
-        if (c1m.length < 5 || c5m.length < 5 || c15m.length < 5) return null;
+        if (c1m.length < 20 || c5m.length < 20 || c15m.length < 20) return null;
 
-        const sig5m = analyzeCandlesNative(c5m, symbol, '5min');
-        const sig15m = analyzeCandlesNative(c15m, symbol, '15min');
-        const sig1m = analyzeCandlesNative(c1m, symbol, '1min', {
+        // Use completed candles only (Phase 1 Requirement 9)
+        const comp1m = marketDataService.getCompletedCandlesOnly(c1m, '1min');
+        const comp5m = marketDataService.getCompletedCandlesOnly(c5m, '5min');
+        const comp15m = marketDataService.getCompletedCandlesOnly(c15m, '15min');
+
+        if (comp1m.length < 20 || comp5m.length < 15 || comp15m.length < 15) return null;
+
+        const sig5m = analyzeCandlesNative(comp5m, symbol, '5min');
+        const sig15m = analyzeCandlesNative(comp15m, symbol, '15min');
+        const sig1m = analyzeCandlesNative(comp1m, symbol, '1min', {
           s5mDirection: sig5m.direction,
           s15mDirection: sig15m.direction,
         });
 
-        // Strict Policy: Only assets that qualify for CALL or PUT (score >= 70 and no filter triggered)
-        if ((sig1m.direction !== 'CALL' && sig1m.direction !== 'PUT') || sig1m.confidence < 70) {
+        // Strict Policy: Only assets that qualify for CALL or PUT (score >= 65 and no filter triggered)
+        if ((sig1m.direction !== 'CALL' && sig1m.direction !== 'PUT') || sig1m.confidence < 65) {
           return null;
         }
 
         const isAllCall = sig1m.direction === 'CALL' && sig5m.direction === 'CALL' && sig15m.direction === 'CALL';
         const isAllPut = sig1m.direction === 'PUT' && sig5m.direction === 'PUT' && sig15m.direction === 'PUT';
+
+        if (!isAllCall && !isAllPut) {
+          return null;
+        }
 
         return {
           symbol,

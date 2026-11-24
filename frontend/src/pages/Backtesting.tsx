@@ -38,6 +38,10 @@ const Backtesting: React.FC = () => {
   const regimes = dataResponse?.result?.performanceByRegime;
   const profitFactor = dataResponse?.result?.profitFactor ?? 1.0;
   const maxDrawdown = dataResponse?.result?.maxDrawdown ?? 0;
+  const evPerTrade = dataResponse?.result?.evPerTrade ?? 0;
+  const breakEvenRate = dataResponse?.result?.breakEvenWinRate ?? 54.6;
+  const maxConsecLosses = dataResponse?.result?.maxConsecutiveLosses ?? 0;
+  const wilsonCi = dataResponse?.result?.wilson95ConfidenceInterval;
   const payoutRate = dataResponse?.payoutRate || '83%';
 
   const accuracyColor = result
@@ -144,17 +148,21 @@ const Backtesting: React.FC = () => {
             </span>
           </div>
 
-          {/* Primary Stat Cards */}
+          {/* Primary Stat Cards (Phase 6) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Total Verified Signals', value: result.totalSignals, color: 'text-white' },
+              { label: 'Total Verified Signals', value: `${result.totalSignals} (${result.wins}W / ${result.losses}L${result.ties ? ` / ${result.ties}T` : ''})`, color: 'text-white' },
               { label: 'Overall Win Rate', value: `${result.accuracy}%`, color: accuracyColor },
+              { label: 'Break-Even Win Rate', value: `${breakEvenRate}%`, color: 'text-gray-400' },
+              { label: 'Expected Value (EV)', value: `${evPerTrade >= 0 ? '+' : ''}${(evPerTrade * 100).toFixed(1)}% / trade`, color: evPerTrade > 0 ? 'text-emerald-400' : 'text-red-400' },
               { label: 'Profit Factor', value: profitFactor.toFixed(2), color: profitFactor >= 1.2 ? 'text-emerald-400' : 'text-amber-400' },
               { label: 'Max Drawdown', value: `-${maxDrawdown}%`, color: maxDrawdown <= 200 ? 'text-emerald-400' : 'text-red-400' },
+              { label: 'Max Consecutive Losses', value: `${maxConsecLosses} losses`, color: maxConsecLosses <= 3 ? 'text-emerald-400' : 'text-amber-400' },
+              { label: 'Wilson 95% Confidence', value: wilsonCi ? `[${wilsonCi.lower}% - ${wilsonCi.upper}%]` : 'N/A', color: 'text-blue-400' },
             ].map(stat => (
-              <div key={stat.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                <p className="text-gray-500 text-xs mb-1">{stat.label}</p>
-                <p className={clsx('text-2xl font-bold font-mono', stat.color)}>{stat.value}</p>
+              <div key={stat.label} className="bg-gray-900 border border-gray-800 rounded-xl p-3 sm:p-4">
+                <p className="text-gray-500 text-[11px] mb-1">{stat.label}</p>
+                <p className={clsx('text-lg sm:text-xl font-bold font-mono', stat.color)}>{stat.value}</p>
               </div>
             ))}
           </div>

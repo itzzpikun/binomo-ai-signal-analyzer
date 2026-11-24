@@ -109,18 +109,39 @@ def evaluate_with_ai(
             "body_pct": body_pct
         })
 
+    rsi_data = indicators.get("rsi")
+    rsi_val = rsi_data.get("value") if isinstance(rsi_data, dict) else rsi_data
+    rsi_sig = rsi_data.get("signal") if isinstance(rsi_data, dict) else "NEUTRAL"
+
+    ema_data = indicators.get("ema")
+    ema_trend = ema_data.get("trend", "NEUTRAL") if isinstance(ema_data, dict) else "NEUTRAL"
+    ema8 = (ema_data.get("ema8") or ema_data.get("ema9")) if isinstance(ema_data, dict) else indicators.get("ema9")
+    ema21 = ema_data.get("ema21") if isinstance(ema_data, dict) else indicators.get("ema21")
+
+    adx_data = indicators.get("adx")
+    adx_val = adx_data.get("adx") if isinstance(adx_data, dict) else adx_data
+
+    ao_data = indicators.get("awesome_oscillator")
+    ao_val = (ao_data.get("color") or ao_data.get("value")) if isinstance(ao_data, dict) else ao_data
+
+    boll_data = indicators.get("bollinger") or indicators.get("bollinger_bands")
+    boll_sig = boll_data.get("signal", "NEUTRAL") if isinstance(boll_data, dict) else "NEUTRAL"
+
+    sr_data = indicators.get("support_resistance")
+    sr_pos = sr_data.get("position", "MIDDLE") if isinstance(sr_data, dict) else "MIDDLE"
+
     compact_indicators = {
-        "rsi": indicators.get("rsi", {}).get("value"),
-        "rsi_signal": indicators.get("rsi", {}).get("signal"),
-        "ema_trend": indicators.get("ema", {}).get("trend"),
-        "ema8": indicators.get("ema", {}).get("ema8"),
-        "ema21": indicators.get("ema", {}).get("ema21"),
-        "adx": indicators.get("adx", {}).get("adx"),
-        "awesome_oscillator": indicators.get("awesome_oscillator", {}).get("color"),
-        "bollinger_signal": indicators.get("bollinger", {}).get("signal"),
-        "sr_position": indicators.get("support_resistance", {}).get("position"),
-        "rsi_divergence": indicators.get("divergence", {}).get("signal", "NONE"),
-        "macro_trend": indicators.get("macro_trend", {}).get("trend", "NEUTRAL"),
+        "rsi": rsi_val,
+        "rsi_signal": rsi_sig,
+        "ema_trend": ema_trend,
+        "ema8": ema8,
+        "ema21": ema21,
+        "adx": adx_val,
+        "awesome_oscillator": ao_val,
+        "bollinger_signal": boll_sig,
+        "sr_position": sr_pos,
+        "rsi_divergence": indicators.get("divergence", {}).get("signal", "NONE") if isinstance(indicators.get("divergence"), dict) else "NONE",
+        "macro_trend": indicators.get("macro_trend", {}).get("trend", "NEUTRAL") if isinstance(indicators.get("macro_trend"), dict) else "NEUTRAL",
     }
 
     pat_names = [p.get("name") for p in patterns] if patterns else []

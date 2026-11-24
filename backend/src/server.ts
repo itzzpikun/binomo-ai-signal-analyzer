@@ -23,6 +23,7 @@ import scanRoutes from './routes/scan.routes';
 import backtestRoutes from './routes/backtest.routes';
 import performanceRoutes from './routes/performance.routes';
 import aiRoutes from './routes/ai.routes';
+import riskRoutes from './routes/risk.routes';
 
 async function ensureAiEngine(): Promise<void> {
   try {
@@ -126,6 +127,7 @@ async function bootstrap(): Promise<void> {
   app.use('/api/backtest', backtestRoutes);
   app.use('/api/performance', performanceRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/risk', riskRoutes);
 
   // ── Serve Frontend Static Assets ──────────────────────────
   if (frontendDist) {

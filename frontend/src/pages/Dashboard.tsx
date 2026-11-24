@@ -101,53 +101,58 @@ const Dashboard: React.FC = () => {
         }
       } catch (err) {
         console.error('[Auto Signal Error]:', err);
-        // Fallback: If backend is momentarily reconnecting, generate client-side signal instantly
-        if (isMountedRef.current && candlesToAnalyze.length >= 3 && !activeSignalRef.current) {
-          const closes = candlesToAnalyze.map((c) => c.close);
-          const lastClose = closes[closes.length - 1];
-          const prevClose = closes[closes.length - 2] || lastClose;
-          const isUp = lastClose >= prevClose;
-          const fallbackDirection = isUp ? 'CALL' : 'PUT';
-
-          const fallbackSignal: Signal = {
-            id: 'client_fallback_' + Date.now(),
+        // Strict Data Integrity (Phase 1 Requirement 6): Return WAIT with DATA_UNAVAILABLE when feed is reconnecting
+        if (isMountedRef.current && !activeSignalRef.current) {
+          const waitSignal: Signal = {
+            id: 'wait_feed_reconnecting_' + Date.now(),
             symbol: selectedSymbol,
             interval: selectedInterval,
             timestamp: new Date().toISOString(),
-            direction: fallbackDirection,
-            confidence: 82,
-            trade_quality: 'A HIGH CONFLUENCE',
-            confluence_score: 80,
+            direction: 'WAIT',
+            confidence: 0,
+            trade_quality: 'DATA_UNAVAILABLE',
+            confluence_score: 0,
             next_probable_setup: {
-              bias: fallbackDirection,
-              biasPercentage: 82,
-              bullishPower: isUp ? 75 : 25,
-              bearishPower: isUp ? 25 : 75,
-              watchTrigger: `Candle momentum aligned with ${fallbackDirection}. Execute within 15s window.`,
-              setupSummary: `${fallbackDirection} signal generated from live candle confluence.`,
+              bias: 'CALL',
+              biasPercentage: 50,
+              bullishPower: 50,
+              bearishPower: 50,
+              watchTrigger: 'Reconnecting to verified market feed. Signal generation paused.',
+              setupSummary: 'Live market feed reconnecting. No trades generated to protect capital.',
             },
             entry_timing: {
-              rule_en: 'Enter trade at the OPEN of the NEXT candle within first 15 seconds.',
-              rule_hi: 'Agli candle ke open hote hi pehle 15 seconds me trade lein.',
-              recommended_action: `Execute ${fallbackDirection} on Binomo within next 15s.`,
-              entry_window: 'First 15 seconds of candle open',
-              expiry_duration: '5 Minutes',
-              confluence_count: 5,
-              quality_tier: 'A HIGH CONFLUENCE',
-              quality_label: `${fallbackDirection} Confluence Established`,
+              rule_en: 'Feed reconnecting. DO NOT trade until genuine verified data is live.',
+              rule_hi: 'Market data reconnect ho raha hai. Fake trade se bachne ke liye WAIT karein.',
+              recommended_action: 'WAIT - Do not enter trade',
+              entry_window: 'None (Data Unavailable)',
+              expiry_duration: selectedInterval,
+              confluence_count: 0,
+              quality_tier: 'WAIT (DATA_UNAVAILABLE)',
+              quality_label: 'Awaiting Genuine Feed',
             },
             indicators: {
-              rsi: { value: isUp ? 56.4 : 43.2, signal: isUp ? 'bullish_momentum' : 'bearish_momentum' },
-              macd: { macd: isUp ? 0.002 : -0.002, signal_line: 0, histogram: isUp ? 0.001 : -0.001, crossover: isUp ? 'bullish' : 'bearish' },
-              ema: { trend: isUp ? 'bullish' : 'bearish' },
+              rsi: { value: 50, signal: 'neutral' },
+              macd: { macd: 0, signal_line: 0, histogram: 0, crossover: 'neutral' },
+              ema: { trend: 'neutral' },
             },
             reasons: {
-              bullish: isUp ? ['Live candle price momentum positive', 'EMA dynamic support test'] : [],
-              bearish: !isUp ? ['Live candle price momentum negative', 'EMA dynamic resistance rejection'] : [],
+              bullish: [],
+              bearish: [],
+            },
+            data_quality: {
+              isValid: false,
+              feedStatus: 'DATA_UNAVAILABLE',
+              message: 'Connecting to market feed...',
+              source: 'Binance / Twelve Data',
+              candleCount: candlesToAnalyze ? candlesToAnalyze.length : 0,
+              duplicateCount: 0,
+              latencySeconds: 0,
+              lastCandleTimestamp: null,
+              anomaliesDetected: ['FEED_RECONNECTING'],
             },
           };
-          activeSignalRef.current = fallbackSignal;
-          setCurrentSignal(fallbackSignal);
+          activeSignalRef.current = waitSignal;
+          setCurrentSignal(waitSignal);
         }
       } finally {
         isAnalyzingRef.current = false;
