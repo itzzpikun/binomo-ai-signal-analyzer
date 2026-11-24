@@ -1,6 +1,10 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
+import type { SignalAlert } from '../store/appStore';
 import { api } from '../services/api';
+import { soundService } from '../services/soundService';
+import { notificationService } from '../services/notificationService';
+import { SignalAlertToast, SoundAlertControls } from '../components/common/SignalAlertToast';
 import CandlestickChart from '../components/charts/CandlestickChart';
 import SignalCard from '../components/signal/SignalCard';
 import IndicatorPanel from '../components/signal/IndicatorPanel';
@@ -30,7 +34,39 @@ const Dashboard: React.FC = () => {
     setCurrentSignal,
     setIsAnalyzing,
     setConnectionStatus,
+    setActiveAlert,
   } = useAppStore();
+
+  const alertedSignalsRef = useRef<Map<string, number>>(new Map());
+
+  // Trigger high confidence alert with sound & desktop notification (deduplicated by 60s cooldown)
+  const triggerAlertIfNotDuplicate = useCallback(
+    (alert: SignalAlert) => {
+      const now = Date.now();
+      const key = `${alert.symbol}-${alert.direction}`;
+      const lastAlertTime = alertedSignalsRef.current.get(key) || 0;
+
+      // Cooldown of 60 seconds per asset+direction to prevent sound spamming
+      if (now - lastAlertTime < 60_000) {
+        return;
+      }
+
+      alertedSignalsRef.current.set(key, now);
+
+      // 1. Play sound chime immediately
+      soundService.playSignalAlert(alert.direction);
+
+      // 2. Set active in-app toast
+      setActiveAlert(alert);
+
+      // 3. Send system desktop notification
+      notificationService.sendNotification(
+        `🚨 ${alert.confidence}% ${alert.direction} ALERT: ${alert.symbol}`,
+        `High Confidence Signal (${alert.confidence}%) detected on ${alert.interval} timeframe.`
+      );
+    },
+    [setActiveAlert]
+  );
 
   const [showChartOnMobile, setShowChartOnMobile] = useState(true);
   // Signal view mode: Binomo Candlestick Predictor vs Multi-Indicator Confluence vs Both
@@ -70,6 +106,26 @@ const Dashboard: React.FC = () => {
         );
         if (result && isMountedRef.current) {
           setCurrentSignal(result);
+
+          // Immediately trigger sound and notification if confidence >= 75%
+          if (
+            result.confidence >= 75 &&
+            (result.direction === 'CALL' || result.direction === 'PUT')
+          ) {
+            const reasons =
+              (result.direction === 'CALL'
+                ? result.reasons?.bullish
+                : result.reasons?.bearish) || [];
+            triggerAlertIfNotDuplicate({
+              id: result.id || `${selectedSymbol}-${Date.now()}`,
+              symbol: selectedSymbol,
+              direction: result.direction,
+              confidence: Math.round(result.confidence),
+              interval: selectedInterval,
+              timestamp: result.timestamp || new Date().toISOString(),
+              reasons,
+            });
+          }
         }
       } catch (err) {
         console.error('[Auto Signal Error]:', err);
@@ -80,7 +136,7 @@ const Dashboard: React.FC = () => {
         }
       }
     },
-    [selectedSymbol, selectedInterval, setIsAnalyzing, setCurrentSignal]
+    [selectedSymbol, selectedInterval, setIsAnalyzing, setCurrentSignal, triggerAlertIfNotDuplicate]
   );
 
   // Fetch candles & current price, then immediately analyze signal
@@ -192,12 +248,63 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, [intervalSeconds]);
 
+  // Continuous background scanner across all assets (runs every 30s) to detect high confidence (>=75%) setups
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+
+    const runBackgroundScan = async () => {
+      try {
+        const res = await api.scanAll();
+        if (res && Array.isArray(res.signals)) {
+          for (const sig of res.signals) {
+            if (
+              sig.confidence >= 75 &&
+              (sig.direction === 'CALL' || sig.direction === 'PUT') &&
+              sig.source !== 'simulated'
+            ) {
+              const reasons =
+                (sig.direction === 'CALL'
+                  ? sig.reasons?.bullish
+                  : sig.reasons?.bearish) || [];
+              triggerAlertIfNotDuplicate({
+                id: `${sig.symbol}-${Date.now()}`,
+                symbol: sig.symbol,
+                direction: sig.direction,
+                confidence: Math.round(sig.confidence),
+                interval: '5min',
+                timestamp: sig.timestamp || new Date().toISOString(),
+                reasons,
+              });
+              break; // Trigger one alert per scan to avoid audio overlap
+            }
+          }
+        }
+      } catch {
+        // silent fail on network/idle
+      }
+    };
+
+    // First scan after 10s initial delay
+    const initialTimer = setTimeout(() => {
+      runBackgroundScan();
+      timer = setInterval(runBackgroundScan, 30_000);
+    }, 10_000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      if (timer) clearInterval(timer);
+    };
+  }, [triggerAlertIfNotDuplicate]);
+
   const lastUpdated = candles.length
     ? new Date(candles[candles.length - 1].time * 1000).toLocaleTimeString()
     : '---';
 
   return (
-    <div className="flex flex-col h-full gap-2.5 sm:gap-4 p-2 sm:p-4 max-w-7xl mx-auto w-full">
+    <div className="flex flex-col h-full gap-2.5 sm:gap-4 p-2 sm:p-4 max-w-7xl mx-auto w-full relative">
+      {/* High-confidence floating toast with sound chime */}
+      <SignalAlertToast />
+
       {/* Top bar — Mobile Optimized & Compact */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-gray-900/60 p-2 sm:p-3 rounded-xl border border-gray-800">
         <div className="flex items-center gap-2 flex-wrap">
@@ -212,6 +319,9 @@ const Dashboard: React.FC = () => {
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-mono">LIVE • 5s Auto</span>
           </div>
+
+          {/* Audio & Alert Controls (≥75% alert toggle & test) */}
+          <SoundAlertControls />
 
           {/* Visible SIMULATED Warning Badge */}
           {isSimulated && (

@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import type { Signal, Candle, ConnectionStatus, TimeInterval } from '../types';
 
+export interface SignalAlert {
+  id: string;
+  symbol: string;
+  direction: 'CALL' | 'PUT' | 'WAIT';
+  confidence: number;
+  interval: string;
+  timestamp: string;
+  reasons: string[];
+}
+
 interface AppState {
   // Market
   selectedSymbol: string;
@@ -14,6 +24,10 @@ interface AppState {
   currentSignal: Signal | null;
   isAnalyzing: boolean;
 
+  // Sound & Alerts
+  soundEnabled: boolean;
+  activeAlert: SignalAlert | null;
+
   // Connection
   connectionStatus: ConnectionStatus;
 
@@ -26,6 +40,8 @@ interface AppState {
   setIsSimulated: (simulated: boolean) => void;
   setCurrentSignal: (signal: Signal | null) => void;
   setIsAnalyzing: (analyzing: boolean) => void;
+  setSoundEnabled: (enabled: boolean) => void;
+  setActiveAlert: (alert: SignalAlert | null) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
   resetSignal: () => void;
 }
@@ -40,6 +56,8 @@ export const useAppStore = create<AppState>((set) => ({
   isSimulated: false,
   currentSignal: null,
   isAnalyzing: false,
+  soundEnabled: typeof window !== 'undefined' ? localStorage.getItem('binomo_sound_alerts_enabled') !== 'false' : true,
+  activeAlert: null,
   connectionStatus: 'disconnected',
 
   // Actions
@@ -68,6 +86,15 @@ export const useAppStore = create<AppState>((set) => ({
   setCurrentSignal: (signal) => set({ currentSignal: signal }),
 
   setIsAnalyzing: (analyzing) => set({ isAnalyzing: analyzing }),
+
+  setSoundEnabled: (enabled) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('binomo_sound_alerts_enabled', String(enabled));
+    }
+    set({ soundEnabled: enabled });
+  },
+
+  setActiveAlert: (alert) => set({ activeAlert: alert }),
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 

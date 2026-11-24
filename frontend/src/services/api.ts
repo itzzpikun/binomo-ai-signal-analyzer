@@ -219,8 +219,14 @@ export const getRiskStatus = async (): Promise<{ riskStatus: RiskStatus }> => {
   return response.data;
 };
 
+export const scanAllAssets = async (): Promise<{ status: string; scanned: number; signals: any[]; timestamp: string }> => {
+  const response = await apiClient.get('/api/scan/all');
+  return response.data;
+};
+
 // Namespace object for convenience (api.getCandles, api.analyzeSignal, etc.)
 export const api = {
+  scanAll: () => scanAllAssets(),
   getCandles: (symbol: string, interval: TimeInterval, outputsize = 100) =>
     getCandles(symbol, interval, outputsize).then(r => {
       if ((r as any).status === 'DATA_UNAVAILABLE') return r;
