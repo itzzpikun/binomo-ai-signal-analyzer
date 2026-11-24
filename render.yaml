@@ -21,7 +21,7 @@ services:
       - key: PORT
         value: 5001
       - key: TWELVE_DATA_API_KEY
-        value: a42fdb0c8c084cde87f9e84a87f4d88f
+        value: 68d13d3465434ad8a40d7db1eda9b8a8
         sync: false
       - key: GEMINI_API_KEY
         value: AIzaSyBjtP-wRmv06a2ifP3ourXe9FnElt6Pw5k
