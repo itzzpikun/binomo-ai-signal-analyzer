@@ -41,6 +41,7 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
 }) => {
   const selectedSymbol = useAppStore((s) => s.selectedSymbol);
   const selectedInterval = useAppStore((s) => s.selectedInterval);
+  const isSimulated = useAppStore((s) => s.isSimulated);
 
   // Interval seconds: 1min = 60s, 5min = 300s, 15min = 900s
   const intervalSeconds = selectedInterval === '1min' ? 60 : selectedInterval === '15min' ? 900 : 300;
@@ -182,11 +183,22 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
       }
     }
 
+    // Strict honesty: Never output CALL/PUT from simulated data
+    if (isSimulated || candles.some((c) => c.source === 'simulated')) {
+      patternName = 'Simulated Candle Data';
+      patternType = 'neutral';
+      rejectionReason = 'Simulated data — live trading predictions disabled for synthetic prices.';
+      strategyName = 'SIMULATED DATA (NO REAL TRADES)';
+      predictedDirection = 'WAIT';
+    }
+
     // Honest computed confidence: directly from the 10-indicator engine if available,
     // otherwise derived from measurable geometric strength (wick ratio / body ratio).
-    const confidence = engineConfidence !== null
-      ? engineConfidence
-      : Math.round(Math.max(lowerWickPercent, upperWickPercent, bodyPercent));
+    const confidence = (isSimulated || candles.some((c) => c.source === 'simulated'))
+      ? 0
+      : (engineConfidence !== null
+        ? engineConfidence
+        : Math.round(Math.max(lowerWickPercent, upperWickPercent, bodyPercent)));
 
     // Entry timing classification:
     // When remaining <= 10s: Prepare
@@ -320,6 +332,17 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
           </a>
         </div>
       </div>
+
+      {/* ── Simulated Warning Badge ── */}
+      {isSimulated && (
+        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/60 text-amber-300 text-xs font-semibold shadow-sm animate-pulse">
+          <span className="text-amber-400 text-base">⚠️</span>
+          <div>
+            <p className="font-bold tracking-wide">SIMULATED - NOT REAL PRICES</p>
+            <p className="text-[11px] text-amber-300/80">Binomo OTC candle feed is simulated. Predictions locked to WAIT.</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Main Prediction Box ── */}
       <div className={clsx(

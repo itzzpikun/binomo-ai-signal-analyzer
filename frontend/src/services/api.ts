@@ -43,6 +43,7 @@ export interface CandlesResponse {
   status: string;
   symbol: string;
   interval: string;
+  source?: 'real' | 'simulated';
   candles: Candle[];
 }
 
@@ -153,6 +154,7 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     entry_timing: sig.entry_timing,
     confluence_score: sig.confluence_score,
     gemini_arbiter: sig.gemini_arbiter,
+    source: data.source || sig.source,
   };
 };
 

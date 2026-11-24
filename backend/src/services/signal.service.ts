@@ -5,6 +5,7 @@ import axios, { AxiosError } from 'axios';
 import ENV from '../config/env';
 import { Signal, ISignal } from '../models/Signal.model';
 import { Performance } from '../models/Performance.model';
+import marketDataService from './marketData.service';
 import type { OHLCCandle, SignalResult, Direction, Outcome } from '../types';
 
 export const signalService = {
@@ -56,12 +57,15 @@ export const signalService = {
     result: SignalResult
   ): Promise<ISignal> {
     const rawResult: any = result || {};
-    const direction = rawResult.direction || rawResult.signal?.direction || 'WAIT';
-    const confidence = typeof rawResult.confidence === 'number'
+    const isSimulated = rawResult.source === 'simulated' || marketDataService.isOtc(symbol);
+    const direction = isSimulated ? 'WAIT' : (rawResult.direction || rawResult.signal?.direction || 'WAIT');
+    const confidence = isSimulated ? 0 : (typeof rawResult.confidence === 'number'
       ? rawResult.confidence
-      : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50);
+      : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50));
     const indicators = rawResult.indicators || rawResult.signal?.indicators || {};
-    const reasons = rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] };
+    const reasons = isSimulated
+      ? { bullish: [], bearish: [], wait_reasons: ['Simulated data'] }
+      : (rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] });
 
     try {
       const signal = new Signal({
@@ -72,17 +76,20 @@ export const signalService = {
         confidence,
         indicators,
         reasons,
+        source: isSimulated ? 'simulated' : 'real',
         outcome: null,
         verifiedAt: null,
       });
       await signal.save();
 
-      // Update total signal count in performance
-      await Performance.findOneAndUpdate(
-        { symbol: symbol.toUpperCase(), interval },
-        { $inc: { totalSignals: 1 }, $set: { updatedAt: new Date() } },
-        { upsert: true, new: true }
-      ).catch(() => null);
+      // Only update total signal count for real trades
+      if (!isSimulated) {
+        await Performance.findOneAndUpdate(
+          { symbol: symbol.toUpperCase(), interval },
+          { $inc: { totalSignals: 1 }, $set: { updatedAt: new Date() } },
+          { upsert: true, new: true }
+        ).catch(() => null);
+      }
 
       return signal;
     } catch (dbErr) {
@@ -96,6 +103,7 @@ export const signalService = {
         confidence,
         indicators,
         reasons,
+        source: isSimulated ? 'simulated' : 'real',
         outcome: null,
         verifiedAt: null,
       } as any;

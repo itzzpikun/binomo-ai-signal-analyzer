@@ -8,6 +8,7 @@ const categoryColors: Record<AssetCategory, string> = {
   Crypto:      'text-purple-400 bg-purple-900/30 border-purple-800',
   Commodities: 'text-amber-400 bg-amber-900/30 border-amber-800',
   Indices:     'text-cyan-400 bg-cyan-900/30 border-cyan-800',
+  'Binomo OTC': 'text-amber-400 bg-amber-900/30 border-amber-800',
 };
 
 const Markets: React.FC = () => {
@@ -79,6 +80,11 @@ const Markets: React.FC = () => {
             </div>
             {asset.pip && (
               <p className="text-gray-600 text-xs">Pip: {asset.pip}</p>
+            )}
+            {asset.isOtc && (
+              <p className="text-amber-400 text-[11px] font-semibold mt-1">
+                ⚠️ Simulated (no real data available)
+              </p>
             )}
             {selectedSymbol === asset.symbol && (
               <div className="mt-2 text-xs text-blue-400 font-medium flex items-center gap-1">

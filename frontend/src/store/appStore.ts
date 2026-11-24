@@ -8,6 +8,7 @@ interface AppState {
   currentPrice: number | null;
   candles: Candle[];
   dataAvailable: boolean;
+  isSimulated: boolean;
 
   // Signal
   currentSignal: Signal | null;
@@ -22,6 +23,7 @@ interface AppState {
   setCurrentPrice: (price: number | null) => void;
   setCandles: (candles: Candle[]) => void;
   setDataAvailable: (available: boolean) => void;
+  setIsSimulated: (simulated: boolean) => void;
   setCurrentSignal: (signal: Signal | null) => void;
   setIsAnalyzing: (analyzing: boolean) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
@@ -35,22 +37,33 @@ export const useAppStore = create<AppState>((set) => ({
   currentPrice: null,
   candles: [],
   dataAvailable: true,
+  isSimulated: false,
   currentSignal: null,
   isAnalyzing: false,
   connectionStatus: 'disconnected',
 
   // Actions
-  setSelectedSymbol: (symbol) =>
-    set({ selectedSymbol: symbol, currentSignal: null, candles: [], currentPrice: null }),
+  setSelectedSymbol: (symbol) => {
+    const isSim = symbol.includes('OTC') || symbol === 'CRYPTO_IDX';
+    set({ selectedSymbol: symbol, currentSignal: null, candles: [], currentPrice: null, isSimulated: isSim });
+  },
 
   setSelectedInterval: (interval) =>
     set({ selectedInterval: interval, currentSignal: null, candles: [] }),
 
   setCurrentPrice: (price) => set({ currentPrice: price }),
 
-  setCandles: (candles) => set({ candles }),
+  setCandles: (candles) => {
+    const isSim = candles.length > 0 && candles.some((c) => c.source === 'simulated');
+    set((state) => ({
+      candles,
+      isSimulated: isSim || state.selectedSymbol.includes('OTC') || state.selectedSymbol === 'CRYPTO_IDX',
+    }));
+  },
 
   setDataAvailable: (available) => set({ dataAvailable: available }),
+
+  setIsSimulated: (simulated) => set({ isSimulated: simulated }),
 
   setCurrentSignal: (signal) => set({ currentSignal: signal }),
 

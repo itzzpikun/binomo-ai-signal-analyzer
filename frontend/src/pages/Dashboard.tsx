@@ -21,6 +21,7 @@ const Dashboard: React.FC = () => {
     candles,
     currentSignal,
     dataAvailable,
+    isSimulated,
     isAnalyzing,
     connectionStatus,
     setCandles,
@@ -121,6 +122,7 @@ const Dashboard: React.FC = () => {
           low: parseFloat(c.low),
           close: parseFloat(c.close),
           volume: c.volume ? parseFloat(c.volume) : undefined,
+          source: c.source || (result as any)?.source || (selectedSymbol.includes('OTC') || selectedSymbol === 'CRYPTO_IDX' ? 'simulated' : 'real'),
         }))
         .filter((c: Candle) => !isNaN(c.time) && !isNaN(c.close));
 
@@ -210,6 +212,17 @@ const Dashboard: React.FC = () => {
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-mono">LIVE • 10s Auto</span>
           </div>
+
+          {/* Visible SIMULATED Warning Badge */}
+          {isSimulated && (
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border bg-amber-500/20 border-amber-500/60 text-amber-300 shadow-sm animate-pulse"
+              title="Price data is simulated OTC. Real trading predictions disabled."
+            >
+              <span className="text-amber-400">⚠️</span>
+              <span>SIMULATED - NOT REAL PRICES</span>
+            </div>
+          )}
 
           {/* Candle Close Countdown */}
           <div

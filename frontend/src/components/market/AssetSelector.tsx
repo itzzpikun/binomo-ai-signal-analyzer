@@ -45,12 +45,13 @@ const AssetSelector: React.FC = () => {
     setSearch('');
   };
 
-  const categories: AssetCategory[] = ['Forex', 'Crypto', 'Commodities', 'Indices'];
+  const categories: AssetCategory[] = ['Forex', 'Crypto', 'Commodities', 'Indices', 'Binomo OTC'];
   const categoryColors: Record<AssetCategory, string> = {
     Forex: 'text-blue-400',
     Crypto: 'text-orange-400',
     Commodities: 'text-yellow-400',
     Indices: 'text-purple-400',
+    'Binomo OTC': 'text-amber-400',
   };
 
   return (
@@ -95,7 +96,14 @@ const AssetSelector: React.FC = () => {
                           : 'text-gray-300 hover:bg-gray-800 hover:text-gray-100'
                       )}
                     >
-                      <span className="font-medium">{asset.symbol}</span>
+                      <span className="font-medium flex items-center gap-1.5">
+                        {asset.symbol}
+                        {asset.isOtc && (
+                          <span className="text-[10px] text-amber-400 bg-amber-950/60 px-1 py-0.2 rounded border border-amber-700/50">
+                            Simulated
+                          </span>
+                        )}
+                      </span>
                       <span className={clsx('text-xs', categoryColors[asset.category])}>
                         {asset.category}
                       </span>
@@ -122,7 +130,14 @@ const AssetSelector: React.FC = () => {
                           : 'text-gray-300 hover:bg-gray-800 hover:text-gray-100'
                       )}
                     >
-                      <span className="font-medium">{asset.symbol}</span>
+                      <span className="font-medium flex items-center gap-1.5">
+                        {asset.symbol}
+                        {asset.isOtc && (
+                          <span className="text-[10px] text-amber-400 bg-amber-950/60 px-1 py-0.2 rounded border border-amber-700/50">
+                            Simulated
+                          </span>
+                        )}
+                      </span>
                       <span className="text-gray-500 text-xs">{asset.name.split('/')[0] || asset.name}</span>
                     </button>
                   ))}

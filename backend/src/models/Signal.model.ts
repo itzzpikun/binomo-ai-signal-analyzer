@@ -14,6 +14,7 @@ export interface ISignal extends Document {
   reasons: SignalReasons;
   outcome: Outcome | null;
   verifiedAt: Date | null;
+  source?: 'real' | 'simulated';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +31,7 @@ const SignalSchema = new Schema<ISignal>(
       bullish: { type: [String], default: [] },
       bearish: { type: [String], default: [] },
     },
+    source: { type: String, enum: ['real', 'simulated'], default: 'real' },
     outcome: { type: String, enum: ['WIN', 'LOSS', 'PENDING', null], default: null },
     verifiedAt: { type: Date, default: null },
   },

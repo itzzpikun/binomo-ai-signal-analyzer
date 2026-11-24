@@ -9,6 +9,7 @@ export interface OHLCCandle {
   low: number;
   close: number;
   volume: number;
+  source?: 'real' | 'simulated';
 }
 
 export type Direction = 'CALL' | 'PUT' | 'WAIT';
@@ -33,12 +34,16 @@ export interface SignalResult {
   confidence: number;
   indicators: SignalIndicators;
   reasons: SignalReasons;
+  source?: 'real' | 'simulated';
+  trade_quality?: string;
+  entry_timing?: any;
 }
 
 export interface AnalyzeRequest {
   symbol: string;
   interval: string;
   candles: OHLCCandle[];
+  source?: 'real' | 'simulated';
 }
 
 export interface BacktestRequest {
@@ -75,6 +80,8 @@ export interface AssetInfo {
   symbol: string;
   name: string;
   type: string;
+  isOtc?: boolean;
+  source?: 'real' | 'simulated';
 }
 
 export interface ApiError {

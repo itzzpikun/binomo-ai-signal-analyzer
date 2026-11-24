@@ -24,7 +24,17 @@ export const marketController = {
 
     try {
       const candles = await marketDataService.getCandles(symbol, interval, outputsize, customKey);
-      res.json({ status: 'OK', symbol, interval, count: candles.length, candles });
+      const isSimulated = marketDataService.isOtc(symbol) || (candles.length > 0 && candles.some((c) => c.source === 'simulated'));
+      const source: 'real' | 'simulated' = isSimulated ? 'simulated' : 'real';
+
+      res.json({
+        status: 'OK',
+        symbol,
+        interval,
+        source,
+        count: candles.length,
+        candles,
+      });
     } catch (err) {
       const e = err as Error & { status?: string; statusCode?: number };
       if (e.status === 'DATA_UNAVAILABLE') {
@@ -55,7 +65,14 @@ export const marketController = {
 
     try {
       const price = await marketDataService.getCurrentPrice(symbol, customKey);
-      res.json({ status: 'OK', symbol, price, timestamp: new Date().toISOString() });
+      const isSimulated = marketDataService.isOtc(symbol);
+      res.json({
+        status: 'OK',
+        symbol,
+        price,
+        source: isSimulated ? 'simulated' : 'real',
+        timestamp: new Date().toISOString(),
+      });
     } catch (err) {
       const e = err as Error & { status?: string; statusCode?: number };
       if (e.status === 'DATA_UNAVAILABLE') {
@@ -67,14 +84,11 @@ export const marketController = {
   },
 
   async getStatus(_req: Request, res: Response): Promise<void> {
-    const apiStatus = await marketDataService.getApiStatus();
+    const detailedStatus = await marketDataService.getDetailedStatus();
     const dbStatus = getDatabaseStatus();
     res.json({
       status: 'OK',
-      dataProvider: {
-        name: 'Twelve Data',
-        ...apiStatus,
-      },
+      ...detailedStatus,
       database: dbStatus,
       timestamp: new Date().toISOString(),
     });

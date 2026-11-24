@@ -136,6 +136,17 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         </span>
       </div>
 
+      {/* Simulated Warning Badge */}
+      {(signal.source === 'simulated' || signal.trade_quality === 'SIMULATED DATA' || signal.reasons?.wait_reasons?.includes('Simulated data')) && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/20 border border-amber-500/60 text-amber-300 text-xs font-semibold shadow-sm animate-pulse">
+          <span className="text-amber-400 font-bold">⚠️</span>
+          <div>
+            <p className="font-bold tracking-wide">SIMULATED - NOT REAL PRICES</p>
+            <p className="text-[11px] text-amber-300/80">Synthetic prices feed. Live trading predictions locked to WAIT.</p>
+          </div>
+        </div>
+      )}
+
       {/* Main Signal Display */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 py-1">
         <div className="flex items-center gap-3">

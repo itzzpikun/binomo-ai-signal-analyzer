@@ -5,6 +5,7 @@ const PriceTicker: React.FC = () => {
   const currentPrice = useAppStore((s) => s.currentPrice);
   const selectedSymbol = useAppStore((s) => s.selectedSymbol);
   const dataAvailable = useAppStore((s) => s.dataAvailable);
+  const isSimulated = useAppStore((s) => s.isSimulated);
 
   const decimals = selectedSymbol.includes('JPY') ? 3
     : selectedSymbol.includes('BTC') ? 2
@@ -15,7 +16,14 @@ const PriceTicker: React.FC = () => {
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-      <p className="text-gray-500 text-xs mb-1 uppercase tracking-widest">Live Price</p>
+      <div className="flex items-center justify-center gap-1.5 mb-1">
+        <p className="text-gray-500 text-xs uppercase tracking-widest">Live Price</p>
+        {isSimulated && (
+          <span className="text-[10px] font-bold text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/40">
+            SIMULATED
+          </span>
+        )}
+      </div>
       {currentPrice !== null && dataAvailable ? (
         <p className="text-3xl font-black font-mono text-gray-100">
           {currentPrice.toFixed(decimals)}

@@ -4,6 +4,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { validationResult } from 'express-validator';
 import signalService from '../services/signal.service';
+import marketDataService from '../services/marketData.service';
 import type { OHLCCandle } from '../types';
 
 export const signalController = {
@@ -21,6 +22,47 @@ export const signalController = {
     };
 
     try {
+      const isSimulated =
+        (req.body as any).source === 'simulated' ||
+        marketDataService.isOtc(symbol) ||
+        (Array.isArray(candles) && candles.some((c: any) => c.source === 'simulated'));
+
+      if (isSimulated) {
+        const finalSignal: any = {
+          symbol,
+          interval,
+          direction: 'WAIT',
+          confidence: 0,
+          trade_quality: 'SIMULATED DATA',
+          source: 'simulated',
+          reasons: {
+            bullish: [],
+            bearish: [],
+            wait_reasons: ['Simulated data'],
+          },
+          indicators: {},
+          entry_timing: {
+            rule_en: 'Trading disabled: Simulated data',
+            rule_hi: 'सौदा अक्षम: डेटा सिम्युलेटेड है',
+            recommended_action: 'WAIT',
+          },
+          confluence_score: 0,
+        };
+
+        const saved = await signalService.saveSignal(symbol, interval, finalSignal);
+        res.status(200).json({
+          status: 'OK',
+          signalId: saved._id,
+          symbol,
+          interval,
+          source: 'simulated',
+          timestamp: saved.timestamp,
+          signal: finalSignal,
+          disclaimer: 'Simulated data. Predictions are disabled for non-genuine prices.',
+        });
+        return;
+      }
+
       const sanitizedCandles: OHLCCandle[] = (candles || []).map((c: any) => ({
         timestamp: c.timestamp || (c.time ? new Date(c.time * 1000).toISOString() : new Date().toISOString()),
         open: parseFloat(c.open),
@@ -28,6 +70,7 @@ export const signalController = {
         low: parseFloat(c.low),
         close: parseFloat(c.close),
         volume: parseFloat(c.volume || '0'),
+        source: 'real',
       }));
 
       const geminiKey =
@@ -91,7 +134,20 @@ export const signalController = {
 
     try {
       const signals = await signalService.getHistory(symbol, limit);
-      res.json({ status: 'OK', count: signals.length, signals });
+      const sanitizedSignals = signals.map((s: any) => {
+        const isSim = s.source === 'simulated' || marketDataService.isOtc(s.symbol) || s.signal?.source === 'simulated';
+        if (isSim && s.direction !== 'WAIT') {
+          return {
+            ...s,
+            direction: 'WAIT',
+            confidence: 0,
+            source: 'simulated',
+            reasons: { bullish: [], bearish: [], wait_reasons: ['Simulated data'] },
+          };
+        }
+        return s;
+      });
+      res.json({ status: 'OK', count: sanitizedSignals.length, signals: sanitizedSignals });
     } catch (err) {
       next(err);
     }

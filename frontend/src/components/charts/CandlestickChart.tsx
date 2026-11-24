@@ -45,6 +45,7 @@ const CandlestickChart: React.FC = () => {
   const candles = useAppStore((s) => s.candles);
   const selectedSymbol = useAppStore((s) => s.selectedSymbol);
   const selectedInterval = useAppStore((s) => s.selectedInterval);
+  const isSimulated = useAppStore((s) => s.isSimulated);
 
   // Active chart engine: TradingView Live View vs AI Pro Chart vs Binomo Live Candles
   const [chartMode, setChartMode] = useState<'tradingview' | 'ai' | 'binomo'>('tradingview');
@@ -323,11 +324,18 @@ const CandlestickChart: React.FC = () => {
             </button>
           </div>
 
-          {/* Live Pulsing Dot */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
-            <span className="text-[10px] sm:text-[11px] font-medium text-emerald-400">LIVE FEED</span>
-          </div>
+          {/* Live Pulsing Dot / Simulated Warning Badge */}
+          {isSimulated ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300">
+              <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
+              <span className="text-[10px] sm:text-[11px] font-bold">SIMULATED - NOT REAL PRICES</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+              <span className="text-[10px] sm:text-[11px] font-medium text-emerald-400">LIVE FEED</span>
+            </div>
+          )}
 
           {/* Price Change */}
           {latestCandle && (
