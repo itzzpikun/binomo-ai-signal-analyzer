@@ -107,9 +107,10 @@ const Dashboard: React.FC = () => {
         if (result && isMountedRef.current) {
           setCurrentSignal(result);
 
-          // Immediately trigger sound and notification if confidence >= 75%
+          // Immediately trigger sound and notification if confluence or confidence >= 75%
+          const score = (result as any).confluence_score ?? result.confidence ?? 0;
           if (
-            result.confidence >= 75 &&
+            score >= 75 &&
             (result.direction === 'CALL' || result.direction === 'PUT')
           ) {
             const reasons =
@@ -120,7 +121,9 @@ const Dashboard: React.FC = () => {
               id: result.id || `${selectedSymbol}-${Date.now()}`,
               symbol: selectedSymbol,
               direction: result.direction,
-              confidence: Math.round(result.confidence),
+              confidence: Math.round(score),
+              confluence_score: Math.round(score),
+              source: (result as any).source || (selectedSymbol.includes('OTC') || selectedSymbol === 'CRYPTO_IDX' ? 'simulated' : 'real'),
               interval: selectedInterval,
               timestamp: result.timestamp || new Date().toISOString(),
               reasons,
@@ -248,7 +251,7 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, [intervalSeconds]);
 
-  // Continuous background scanner across all assets (runs every 30s) to detect high confidence (>=75%) setups
+  // Continuous background scanner across all assets (runs every 8s) to detect high confluence (>=75%) setups
   useEffect(() => {
     let timer: NodeJS.Timeout;
 
@@ -256,11 +259,18 @@ const Dashboard: React.FC = () => {
       try {
         const res = await api.scanAll();
         if (res && Array.isArray(res.signals)) {
-          for (const sig of res.signals) {
+          // Sort by highest confluence score descending
+          const sorted = [...res.signals].sort((a, b) => {
+            const scoreA = a.confluence_score ?? a.confidence ?? 0;
+            const scoreB = b.confluence_score ?? b.confidence ?? 0;
+            return scoreB - scoreA;
+          });
+
+          for (const sig of sorted) {
+            const score = sig.confluence_score ?? sig.confidence ?? 0;
             if (
-              sig.confidence >= 75 &&
-              (sig.direction === 'CALL' || sig.direction === 'PUT') &&
-              sig.source !== 'simulated'
+              score >= 75 &&
+              (sig.direction === 'CALL' || sig.direction === 'PUT')
             ) {
               const reasons =
                 (sig.direction === 'CALL'
@@ -270,12 +280,14 @@ const Dashboard: React.FC = () => {
                 id: `${sig.symbol}-${Date.now()}`,
                 symbol: sig.symbol,
                 direction: sig.direction,
-                confidence: Math.round(sig.confidence),
+                confidence: Math.round(score),
+                confluence_score: Math.round(score),
+                source: sig.source || (sig.symbol.includes('OTC') || sig.symbol === 'CRYPTO_IDX' ? 'simulated' : 'real'),
                 interval: '5min',
                 timestamp: sig.timestamp || new Date().toISOString(),
                 reasons,
               });
-              break; // Trigger one alert per scan to avoid audio overlap
+              break; // Trigger highest confluence alert per scan cycle
             }
           }
         }
@@ -284,11 +296,11 @@ const Dashboard: React.FC = () => {
       }
     };
 
-    // First scan after 10s initial delay
+    // First scan after 2s, then recurring every 8s
     const initialTimer = setTimeout(() => {
       runBackgroundScan();
-      timer = setInterval(runBackgroundScan, 30_000);
-    }, 10_000);
+      timer = setInterval(runBackgroundScan, 8_000);
+    }, 2_000);
 
     return () => {
       clearTimeout(initialTimer);

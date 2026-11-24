@@ -58,14 +58,12 @@ export const signalService = {
   ): Promise<ISignal> {
     const rawResult: any = result || {};
     const isSimulated = rawResult.source === 'simulated' || marketDataService.isOtc(symbol);
-    const direction = isSimulated ? 'WAIT' : (rawResult.direction || rawResult.signal?.direction || 'WAIT');
-    const confidence = isSimulated ? 0 : (typeof rawResult.confidence === 'number'
+    const direction = rawResult.direction || rawResult.signal?.direction || 'WAIT';
+    const confidence = typeof rawResult.confidence === 'number'
       ? rawResult.confidence
-      : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50));
+      : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50);
     const indicators = rawResult.indicators || rawResult.signal?.indicators || {};
-    const reasons = isSimulated
-      ? { bullish: [], bearish: [], wait_reasons: ['Simulated data'] }
-      : (rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] });
+    const reasons = rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] };
 
     try {
       const signal = new Signal({

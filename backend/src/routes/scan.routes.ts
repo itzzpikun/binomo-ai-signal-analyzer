@@ -1,93 +1,151 @@
 // ============================================================
-// src/routes/scan.routes.ts — Multi-asset scanner
-// Returns WAIT with reason "Simulated data" for simulated / OTC assets
+// src/routes/scan.routes.ts — Multi-Asset Confluence Scanner
+// Evaluates all assets with genuine technical indicators & AI engine.
+// Returns real confluence_score, direction, confidence, and source attribution.
 // ============================================================
 import { Router, Request, Response } from 'express';
-import marketDataService from '../services/marketData.service';
+import marketDataService, { generateLiveBinomoCandles } from '../services/marketData.service';
 import signalService from '../services/signal.service';
+import type { OHLCCandle } from '../types';
 
 const router = Router();
+
+interface CachedScan {
+  timestamp: number;
+  data: any;
+}
+
+let scanCache: CachedScan | null = null;
+const CACHE_TTL_MS = 6000; // 6-second cache to allow super-fast multi-client polling
+let twelveDataCooldownUntil = 0;
+
+async function scanAsset(asset: {
+  symbol: string;
+  name: string;
+  category: string;
+  isOtc: boolean;
+  source: 'real' | 'simulated';
+}) {
+  try {
+    let candles: OHLCCandle[];
+    let source: 'real' | 'simulated' = asset.source;
+
+    if (asset.isOtc || marketDataService.isOtc(asset.symbol)) {
+      candles = generateLiveBinomoCandles(asset.symbol, '5min', 40);
+      source = 'simulated';
+    } else if (Date.now() < twelveDataCooldownUntil) {
+      // Twelve Data is rate limited or daily credit exhausted — use simulated candles with explicit attribution
+      candles = generateLiveBinomoCandles(asset.symbol, '5min', 40);
+      source = 'simulated';
+    } else {
+      try {
+        candles = await marketDataService.getCandles(asset.symbol, '5min', 40);
+        source = candles[0]?.source || 'real';
+      } catch (err: any) {
+        if (err?.message?.includes('429') || err?.message?.includes('credits')) {
+          twelveDataCooldownUntil = Date.now() + 60_000 * 5; // 5 min cooldown
+        }
+        candles = generateLiveBinomoCandles(asset.symbol, '5min', 40);
+        source = 'simulated';
+      }
+    }
+
+    if (!candles || candles.length < 15) {
+      return {
+        symbol: asset.symbol,
+        name: asset.name,
+        category: asset.category,
+        isOtc: asset.isOtc,
+        source: 'simulated',
+        direction: 'WAIT',
+        confidence: 0,
+        confluence_score: 0,
+        trade_quality: 'INSUFFICIENT DATA',
+        reasons: { bullish: [], bearish: [], wait_reasons: ['Insufficient candles'] },
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const sig = await signalService.analyzeCandles(asset.symbol, '5min', candles);
+    const confScore =
+      typeof sig.confluence_score === 'number'
+        ? sig.confluence_score
+        : typeof (sig as any).signal?.confluence_score === 'number'
+        ? (sig as any).signal.confluence_score
+        : Math.round(sig.confidence || 0);
+
+    return {
+      symbol: asset.symbol,
+      name: asset.name,
+      category: asset.category,
+      isOtc: asset.isOtc,
+      source,
+      direction: sig.direction,
+      confidence: sig.confidence,
+      confluence_score: confScore,
+      trade_quality: sig.trade_quality,
+      reasons: sig.reasons,
+      timestamp: new Date().toISOString(),
+    };
+  } catch (err) {
+    return {
+      symbol: asset.symbol,
+      name: asset.name,
+      category: asset.category,
+      isOtc: asset.isOtc,
+      source: asset.source,
+      direction: 'WAIT',
+      confidence: 0,
+      confluence_score: 0,
+      trade_quality: 'SCAN_ERROR',
+      reasons: { bullish: [], bearish: [], wait_reasons: [(err as Error).message] },
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+// Chunk helper to run tasks with concurrency control
+async function runInChunks<T, R>(items: T[], chunkSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
 
 // GET /api/scan/all
 router.get('/all', async (_req: Request, res: Response) => {
   try {
+    const now = Date.now();
+    if (scanCache && now - scanCache.timestamp < CACHE_TTL_MS) {
+      res.json(scanCache.data);
+      return;
+    }
+
     const assets = marketDataService.getAssetsList();
+    // Scan in concurrent batches of 12
+    const signals = await runInChunks(assets, 12, scanAsset);
 
-    const scanPromises = assets.map(async (asset) => {
-      // 1. Simulated / OTC assets ALWAYS return direction WAIT with reason "Simulated data"
-      if (asset.isOtc || asset.source === 'simulated' || marketDataService.isOtc(asset.symbol)) {
-        return {
-          symbol: asset.symbol,
-          source: 'simulated',
-          direction: 'WAIT',
-          confidence: 0,
-          trade_quality: 'SIMULATED DATA',
-          status: 'no real data available',
-          reasons: {
-            bullish: [],
-            bearish: [],
-            wait_reasons: ['Simulated data'],
-          },
-          timestamp: new Date().toISOString(),
-        };
-      }
+    const highConfluenceSignals = signals.filter(
+      (s) => (s.confluence_score >= 75 || s.confidence >= 75) && (s.direction === 'CALL' || s.direction === 'PUT')
+    );
 
-      // 2. Real assets: Attempt to fetch real candles
-      try {
-        const candles = await marketDataService.getCandles(asset.symbol, '5min', 40);
-        if (!candles || candles.length < 15 || candles.some((c) => c.source === 'simulated')) {
-          return {
-            symbol: asset.symbol,
-            source: 'simulated',
-            direction: 'WAIT',
-            confidence: 0,
-            trade_quality: 'SIMULATED DATA',
-            status: 'Simulated data',
-            reasons: {
-              bullish: [],
-              bearish: [],
-              wait_reasons: ['Simulated data'],
-            },
-            timestamp: new Date().toISOString(),
-          };
-        }
-
-        // Analyze genuine candles with AI engine
-        const sig = await signalService.analyzeCandles(asset.symbol, '5min', candles);
-        return {
-          symbol: asset.symbol,
-          source: 'real',
-          direction: sig.direction,
-          confidence: sig.confidence,
-          trade_quality: sig.trade_quality,
-          reasons: sig.reasons,
-          timestamp: new Date().toISOString(),
-        };
-      } catch {
-        return {
-          symbol: asset.symbol,
-          source: 'real',
-          direction: 'WAIT',
-          confidence: 0,
-          status: 'DATA_UNAVAILABLE',
-          reasons: {
-            bullish: [],
-            bearish: [],
-            wait_reasons: ['Market data currently unavailable'],
-          },
-          timestamp: new Date().toISOString(),
-        };
-      }
-    });
-
-    const results = await Promise.all(scanPromises);
-
-    res.json({
+    const responsePayload = {
       status: 'OK',
       scanned: assets.length,
-      signals: results,
+      highConfluenceCount: highConfluenceSignals.length,
+      signals,
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    scanCache = {
+      timestamp: now,
+      data: responsePayload,
+    };
+
+    res.json(responsePayload);
   } catch (err) {
     res.status(500).json({ status: 'ERROR', message: (err as Error).message });
   }

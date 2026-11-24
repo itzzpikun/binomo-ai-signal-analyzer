@@ -85,9 +85,16 @@ export const SignalAlertToast: React.FC = () => {
                   }`}
                 />
               </span>
-              <span className="text-xs font-black tracking-wider uppercase flex items-center gap-1">
-                <span>🚨 HIGH CONFIDENCE ALERT</span>
-                <span className="font-mono text-amber-300">({activeAlert.confidence}%)</span>
+              <span className="text-xs font-black tracking-wider uppercase flex items-center gap-1.5 flex-wrap">
+                <span>🚨 HIGH CONFLUENCE ALERT</span>
+                <span className="font-mono text-amber-300 font-bold bg-black/40 px-1.5 py-0.5 rounded border border-amber-500/30">
+                  {activeAlert.confluence_score ?? activeAlert.confidence}%
+                </span>
+                {activeAlert.source === 'simulated' && (
+                  <span className="text-[10px] text-amber-300 bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-600/50 font-semibold">
+                    OTC
+                  </span>
+                )}
               </span>
             </div>
 

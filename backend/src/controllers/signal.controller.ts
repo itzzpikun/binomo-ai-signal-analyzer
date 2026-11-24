@@ -27,42 +27,6 @@ export const signalController = {
         marketDataService.isOtc(symbol) ||
         (Array.isArray(candles) && candles.some((c: any) => c.source === 'simulated'));
 
-      if (isSimulated) {
-        const finalSignal: any = {
-          symbol,
-          interval,
-          direction: 'WAIT',
-          confidence: 0,
-          trade_quality: 'SIMULATED DATA',
-          source: 'simulated',
-          reasons: {
-            bullish: [],
-            bearish: [],
-            wait_reasons: ['Simulated data'],
-          },
-          indicators: {},
-          entry_timing: {
-            rule_en: 'Trading disabled: Simulated data',
-            rule_hi: 'सौदा अक्षम: डेटा सिम्युलेटेड है',
-            recommended_action: 'WAIT',
-          },
-          confluence_score: 0,
-        };
-
-        const saved = await signalService.saveSignal(symbol, interval, finalSignal);
-        res.status(200).json({
-          status: 'OK',
-          signalId: saved._id,
-          symbol,
-          interval,
-          source: 'simulated',
-          timestamp: saved.timestamp,
-          signal: finalSignal,
-          disclaimer: 'Simulated data. Predictions are disabled for non-genuine prices.',
-        });
-        return;
-      }
-
       const sanitizedCandles: OHLCCandle[] = (candles || []).map((c: any) => ({
         timestamp: c.timestamp || (c.time ? new Date(c.time * 1000).toISOString() : new Date().toISOString()),
         open: parseFloat(c.open),
@@ -70,7 +34,7 @@ export const signalController = {
         low: parseFloat(c.low),
         close: parseFloat(c.close),
         volume: parseFloat(c.volume || '0'),
-        source: 'real',
+        source: isSimulated ? 'simulated' : (c.source || 'real'),
       }));
 
       const geminiKey =
@@ -93,10 +57,14 @@ export const signalController = {
       const rawResult: any = result || {};
       const finalSignal: any = {
         ...rawResult,
+        source: isSimulated ? 'simulated' : 'real',
         direction: rawResult.direction || rawResult.signal?.direction || 'WAIT',
         confidence: typeof rawResult.confidence === 'number'
           ? rawResult.confidence
           : (typeof rawResult.signal?.confidence === 'number' ? rawResult.signal.confidence : 50),
+        confluence_score: typeof rawResult.confluence_score === 'number'
+          ? rawResult.confluence_score
+          : (typeof rawResult.signal?.confluence_score === 'number' ? rawResult.signal.confluence_score : 0),
         indicators: rawResult.indicators || rawResult.signal?.indicators || {},
         reasons: rawResult.reasons || rawResult.signal?.reasons || { bullish: [], bearish: [] },
       };
@@ -107,10 +75,12 @@ export const signalController = {
         signalId: saved._id,
         symbol,
         interval,
+        source: isSimulated ? 'simulated' : 'real',
         timestamp: saved.timestamp,
         signal: finalSignal,
-        disclaimer:
-          'This signal is for informational purposes only and does not constitute financial advice.',
+        disclaimer: isSimulated
+          ? 'Simulated OTC market data. Technical analysis computed for educational and analysis purposes.'
+          : 'This signal is for informational purposes only and does not constitute financial advice.',
       });
     } catch (err) {
       const e = err as Error & { status?: string; statusCode?: number };
@@ -134,19 +104,10 @@ export const signalController = {
 
     try {
       const signals = await signalService.getHistory(symbol, limit);
-      const sanitizedSignals = signals.map((s: any) => {
-        const isSim = s.source === 'simulated' || marketDataService.isOtc(s.symbol) || s.signal?.source === 'simulated';
-        if (isSim && s.direction !== 'WAIT') {
-          return {
-            ...s,
-            direction: 'WAIT',
-            confidence: 0,
-            source: 'simulated',
-            reasons: { bullish: [], bearish: [], wait_reasons: ['Simulated data'] },
-          };
-        }
-        return s;
-      });
+      const sanitizedSignals = signals.map((s: any) => ({
+        ...s,
+        source: s.source || (marketDataService.isOtc(s.symbol) ? 'simulated' : 'real'),
+      }));
       res.json({ status: 'OK', count: sanitizedSignals.length, signals: sanitizedSignals });
     } catch (err) {
       next(err);

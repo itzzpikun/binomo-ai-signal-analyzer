@@ -6,6 +6,9 @@ export interface SignalAlert {
   symbol: string;
   direction: 'CALL' | 'PUT' | 'WAIT';
   confidence: number;
+  confluence_score?: number;
+  source?: 'real' | 'simulated';
+  payout?: number;
   interval: string;
   timestamp: string;
   reasons: string[];

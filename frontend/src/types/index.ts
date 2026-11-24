@@ -89,6 +89,15 @@ export interface Asset {
   isOtc?: boolean;
   source?: 'real' | 'simulated';
   status?: string;
+  payout?: number;
+}
+
+export function getAssetPayout(symbol: string): number {
+  if (symbol === 'Crypto IDX') return 83;
+  if (symbol === 'GBP/USD') return 70;
+  if (symbol === 'Gold') return 60;
+  if (['GBP/HUF', 'EUR/PLN', 'ZAR/JPY', 'CHF/HUF'].includes(symbol)) return 50;
+  return 80;
 }
 
 export type AssetCategory = 'Forex' | 'Crypto' | 'Commodities' | 'Binomo OTC';

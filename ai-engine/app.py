@@ -95,29 +95,6 @@ def analyze():
         or sym_upper in ("CRYPTO_IDX", "CRYPTO IDX")
         or any(c.get("source") == "simulated" for c in cleaned["candles"])
     )
-    if is_simulated:
-        logger.info("Simulated data detected for %s — locking direction to WAIT", cleaned["symbol"])
-        return jsonify({
-            "symbol": cleaned["symbol"],
-            "interval": cleaned["interval"],
-            "source": "simulated",
-            "direction": "WAIT",
-            "confidence": 0,
-            "trade_quality": "SIMULATED DATA",
-            "indicators": {},
-            "reasons": {
-                "bullish": [],
-                "bearish": [],
-                "wait_reasons": ["Simulated data"],
-            },
-            "entry_timing": {
-                "rule_en": "Trading disabled: Simulated data",
-                "rule_hi": "सौदा अक्षम: डेटा सिम्युलेटेड है",
-                "recommended_action": "WAIT",
-            },
-            "confluence_score": 0,
-        })
-
     gemini_key = (
         request.headers.get("X-Gemini-Key")
         or data.get("gemini_api_key")
@@ -143,6 +120,9 @@ def analyze():
 
     signal["symbol"] = cleaned["symbol"]
     signal["interval"] = cleaned["interval"]
+    signal["source"] = "simulated" if is_simulated else "real"
+    if is_simulated:
+        signal["trade_quality"] = f"{signal.get('trade_quality', 'CONFLUENCE')} (OTC)"
     return jsonify(signal)
 
 

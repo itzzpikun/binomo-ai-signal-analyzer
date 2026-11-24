@@ -37,6 +37,7 @@ export interface SignalResult {
   source?: 'real' | 'simulated';
   trade_quality?: string;
   entry_timing?: any;
+  confluence_score?: number;
 }
 
 export interface AnalyzeRequest {

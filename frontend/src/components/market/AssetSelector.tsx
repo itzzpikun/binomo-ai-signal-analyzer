@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../../store/appStore';
-import { ASSET_CATEGORIES } from '../../types';
+import { ASSET_CATEGORIES, getAssetPayout } from '../../types';
 import type { Asset, AssetCategory } from '../../types';
 import clsx from 'clsx';
 
@@ -103,9 +103,14 @@ const AssetSelector: React.FC = () => {
                           </span>
                         )}
                       </span>
-                      <span className={clsx('text-xs', categoryColors[asset.category])}>
-                        {asset.category}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-emerald-400 font-mono">
+                          {getAssetPayout(asset.symbol)}%
+                        </span>
+                        <span className={clsx('text-xs', categoryColors[asset.category])}>
+                          {asset.category}
+                        </span>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -137,7 +142,12 @@ const AssetSelector: React.FC = () => {
                           </span>
                         )}
                       </span>
-                      <span className="text-gray-500 text-xs">{asset.name.split('/')[0] || asset.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-emerald-400 font-mono">
+                          {getAssetPayout(asset.symbol)}%
+                        </span>
+                        <span className="text-gray-500 text-xs">{asset.name.split('/')[0] || asset.name}</span>
+                      </div>
                     </button>
                   ))}
                 </div>
