@@ -6,57 +6,6 @@ export type SignalDirection = 'CALL' | 'PUT' | 'WAIT';
 export type OutcomeType = 'WIN' | 'LOSS' | 'PENDING';
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error';
 export type TimeInterval = '1min' | '5min' | '15min';
-export type FeedStatus = 'LIVE' | 'DELAYED' | 'DATA_UNAVAILABLE';
-
-export interface DataQualityReport {
-  isValid: boolean;
-  feedStatus: FeedStatus;
-  message: string;
-  source: string;
-  candleCount: number;
-  duplicateCount: number;
-  latencySeconds: number;
-  lastCandleTimestamp: string | null;
-  anomaliesDetected: string[];
-}
-
-export interface TimeframeAlignment {
-  '1m': SignalDirection;
-  '5m': SignalDirection;
-  '15m': SignalDirection;
-  isAligned: boolean;
-  conflictDetected: boolean;
-}
-
-export interface TradeRiskAdvice {
-  isTradePermitted: boolean;
-  status: 'PERMITTED' | 'DAILY_LIMIT_HALT' | 'COOLDOWN_ACTIVE';
-  recommendedStake: number;
-  maxAllowedStake: number;
-  reason: string;
-  cooldownRemainingSeconds: number;
-  antiMartingaleWarning: string;
-}
-
-export interface RiskSettings {
-  bankroll: number;
-  maxStakePercentage: number;
-  dailyLossLimitPercentage: number;
-  maxConsecutiveLosses: number;
-  cooldownMinutes: number;
-}
-
-export interface RiskState {
-  currentDailyLoss: number;
-  consecutiveLosses: number;
-  isDailyLimitBreached: boolean;
-  isCooldownActive: boolean;
-  cooldownUntil: string | null;
-  tradesTodayCount: number;
-  dailyWins: number;
-  dailyLosses: number;
-  lastUpdated: string;
-}
 
 export interface Candle {
   time: number; // Unix timestamp (seconds)
@@ -147,9 +96,6 @@ export interface Signal {
   market_regime?: 'TRENDING' | 'RANGING' | 'VOLATILE';
   next_probable_setup?: NextProbableSetup;
   gemini_arbiter?: GeminiArbiterResult;
-  data_quality?: DataQualityReport;
-  timeframe_alignment?: TimeframeAlignment;
-  risk_advice?: TradeRiskAdvice;
 }
 
 export interface Asset {
@@ -213,36 +159,14 @@ export interface BacktestParams {
   indicators?: string[];
 }
 
-export interface WalkForwardPartition {
-  trades: number;
-  wins: number;
-  losses: number;
-  ties: number;
-  winRate: number;
-  evPerTrade: number;
-  profitFactor: number;
-  maxDrawdown: number;
-  maxConsecutiveLosses: number;
-}
-
 export interface BacktestResult {
   totalSignals: number;
   verifiedSignals: number;
   wins: number;
   losses: number;
-  ties?: number;
   accuracy: number;
-  breakEvenWinRate?: number;
-  evPerTrade?: number;
-  profitFactor?: number;
-  maxDrawdown?: number;
-  maxConsecutiveLosses?: number;
-  wilson95ConfidenceInterval?: { lower: number; upper: number };
-  inSample?: WalkForwardPartition;
-  outOfSample?: WalkForwardPartition;
   equityCurve: { timestamp: string; equity: number }[];
   signals: Signal[];
-  disclaimer?: string;
 }
 
 export interface PerformanceSummary {

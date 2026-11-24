@@ -7,9 +7,6 @@ import type {
   BacktestResult,
   PerformanceSummary,
   TimeInterval,
-  RiskSettings,
-  RiskState,
-  TradeRiskAdvice,
 } from '../types';
 
 // In production (served from Express), VITE_API_URL is empty → relative URLs (same origin)
@@ -264,37 +261,6 @@ export const getAIProviders = async () => {
   return response.data;
 };
 
-// ----------------------------------------------------------------
-// Risk Management (Phase 7)
-// ----------------------------------------------------------------
-
-export interface RiskStatusResponse {
-  status: string;
-  settings: RiskSettings;
-  state: RiskState;
-  advice: TradeRiskAdvice;
-}
-
-export const getRiskStatus = async (): Promise<RiskStatusResponse> => {
-  const response = await apiClient.get('/api/risk/status');
-  return response.data;
-};
-
-export const updateRiskSettings = async (settings: Partial<RiskSettings>): Promise<{ status: string; settings: RiskSettings }> => {
-  const response = await apiClient.post('/api/risk/settings', settings);
-  return response.data;
-};
-
-export const recordRiskOutcome = async (outcome: 'WIN' | 'LOSS' | 'TIE', stakeAmount: number): Promise<{ status: string; state: RiskState }> => {
-  const response = await apiClient.post('/api/risk/record', { outcome, stakeAmount });
-  return response.data;
-};
-
-export const resetRiskDaily = async (): Promise<{ status: string; state: RiskState }> => {
-  const response = await apiClient.post('/api/risk/reset');
-  return response.data;
-};
-
 // Namespace object for convenience (api.getCandles, api.analyzeSignal, etc.)
 export const api = {
   getCandles: (symbol: string, interval: TimeInterval, outputsize = 100) =>
@@ -316,10 +282,6 @@ export const api = {
   getPerformance: () => getPerformance(),
   testAIKey: (provider: string, apiKey: string) => testAIKey(provider, apiKey),
   getAIProviders: () => getAIProviders(),
-  getRiskStatus: () => getRiskStatus(),
-  updateRiskSettings: (settings: Partial<RiskSettings>) => updateRiskSettings(settings),
-  recordRiskOutcome: (outcome: 'WIN' | 'LOSS' | 'TIE', stakeAmount: number) => recordRiskOutcome(outcome, stakeAmount),
-  resetRiskDaily: () => resetRiskDaily(),
 };
 
 export default apiClient;
