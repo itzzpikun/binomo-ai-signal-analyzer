@@ -76,6 +76,9 @@ export const BINOMO_ASSETS_LIST: BinomoAssetSpec[] = [
 const ASSET_SPEC_MAP = new Map<string, BinomoAssetSpec>();
 BINOMO_ASSETS_LIST.forEach((a) => {
   ASSET_SPEC_MAP.set(a.symbol.toUpperCase(), a);
+  if (a.providerSymbol) {
+    ASSET_SPEC_MAP.set(a.providerSymbol.toUpperCase(), a);
+  }
   const stripped = a.symbol.replace(/\s*\(OTC\)/i, '').trim().toUpperCase();
   if (!ASSET_SPEC_MAP.has(stripped)) {
     ASSET_SPEC_MAP.set(stripped, a);

@@ -61,6 +61,8 @@ ASSET_SPEC_MAP: Dict[str, Dict[str, Any]] = {}
 for a in BINOMO_ASSETS_LIST:
     sym = a["symbol"].upper()
     ASSET_SPEC_MAP[sym] = a
+    if "providerSymbol" in a and a["providerSymbol"]:
+        ASSET_SPEC_MAP[a["providerSymbol"].upper()] = a
     stripped = sym.replace("(OTC)", "").strip()
     if stripped not in ASSET_SPEC_MAP:
         ASSET_SPEC_MAP[stripped] = a
