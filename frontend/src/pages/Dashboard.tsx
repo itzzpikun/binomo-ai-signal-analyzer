@@ -11,6 +11,7 @@ import PriceTicker from '../components/market/PriceTicker';
 import StatusBadge from '../components/common/StatusBadge';
 import RiskWarning from '../components/common/RiskWarning';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import BinomoCandlePredictor from '../components/signal/BinomoCandlePredictor';
 import type { Candle } from '../types';
 
 const Dashboard: React.FC = () => {
@@ -31,6 +32,8 @@ const Dashboard: React.FC = () => {
   } = useAppStore();
 
   const [showChartOnMobile, setShowChartOnMobile] = useState(true);
+  // Signal view mode: Binomo Candlestick Predictor vs Multi-Indicator Confluence vs Both
+  const [signalMode, setSignalMode] = useState<'binomo_candle' | 'standard' | 'both'>('binomo_candle');
 
   // Interval in seconds: 1min = 60s, 5min = 300s, 15min = 900s
   const intervalSeconds =
@@ -280,7 +283,57 @@ const Dashboard: React.FC = () => {
 
           {/* Signal panel — 40% Desktop / Full on Mobile */}
           <div className="w-full lg:w-2/5 flex flex-col gap-2.5 sm:gap-3">
-            <SignalCard signal={currentSignal} isAnalyzing={isAnalyzing} />
+            {/* Dual Mode Switch: Binomo Candlestick Predictor vs Standard Confluence vs Both */}
+            <div className="flex items-center gap-1 p-1 bg-gray-900/95 border border-gray-800 rounded-xl shadow-lg">
+              <button
+                onClick={() => setSignalMode('binomo_candle')}
+                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  signalMode === 'binomo_candle'
+                    ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-md shadow-yellow-500/20'
+                    : 'text-yellow-400 hover:text-yellow-300'
+                }`}
+              >
+                <span>🟡 Binomo Candlestick</span>
+                <span className="text-[9px] bg-black/20 text-black px-1 rounded uppercase font-mono font-extrabold">LIVE</span>
+              </button>
+
+              <button
+                onClick={() => setSignalMode('standard')}
+                className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  signalMode === 'standard'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <span>⚡ Multi-Indicator AI</span>
+              </button>
+
+              <button
+                onClick={() => setSignalMode('both')}
+                className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                  signalMode === 'both'
+                    ? 'bg-gray-800 text-white border border-gray-600'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+                title="View Both Binomo Candlestick and Multi-Indicator Signal together"
+              >
+                <span>⊞ Both</span>
+              </button>
+            </div>
+
+            {/* Render Binomo Candlestick Predictor */}
+            {(signalMode === 'binomo_candle' || signalMode === 'both') && (
+              <BinomoCandlePredictor
+                candles={candles}
+                signal={currentSignal}
+                isAnalyzing={isAnalyzing}
+              />
+            )}
+
+            {/* Render Multi-Indicator Confluence Signal Card */}
+            {(signalMode === 'standard' || signalMode === 'both') && (
+              <SignalCard signal={currentSignal} isAnalyzing={isAnalyzing} />
+            )}
 
             {/* Background auto-analyzing subtle status indicator */}
             {isAnalyzing && currentSignal && (

@@ -46,8 +46,8 @@ const CandlestickChart: React.FC = () => {
   const selectedSymbol = useAppStore((s) => s.selectedSymbol);
   const selectedInterval = useAppStore((s) => s.selectedInterval);
 
-  // Active chart engine: TradingView Live View vs AI Pro Chart
-  const [chartMode, setChartMode] = useState<'tradingview' | 'ai'>('tradingview');
+  // Active chart engine: TradingView Live View vs AI Pro Chart vs Binomo Live Candles
+  const [chartMode, setChartMode] = useState<'tradingview' | 'ai' | 'binomo'>('tradingview');
 
   // Live hover candle details
   const [hoverData, setHoverData] = useState<{
@@ -311,6 +311,16 @@ const CandlestickChart: React.FC = () => {
             >
               📊 AI Pro Chart
             </button>
+            <button
+              onClick={() => setChartMode('binomo')}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all flex items-center gap-1 ${
+                chartMode === 'binomo'
+                  ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-sm font-bold'
+                  : 'text-yellow-400 hover:text-yellow-300'
+              }`}
+            >
+              <span>🟡 Binomo Candles</span>
+            </button>
           </div>
 
           {/* Live Pulsing Dot */}
@@ -369,6 +379,27 @@ const CandlestickChart: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* Binomo Live Candlestick HUD */}
+          {chartMode === 'binomo' && latestCandle && (
+            <div className="px-3 py-1.5 bg-yellow-950/40 border-b border-yellow-500/30 flex items-center justify-between text-xs text-yellow-300 flex-wrap gap-1">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-yellow-400 flex items-center gap-1">
+                  <span>🟡</span>
+                  <span>Binomo Live Candlestick Feed</span>
+                </span>
+                <span className="text-[11px] text-gray-300">
+                  • Body: {Math.round((Math.abs(latestCandle.close - latestCandle.open) / Math.max(latestCandle.high - latestCandle.low, 0.0001)) * 100)}%
+                </span>
+                <span className="text-[11px] font-semibold">
+                  {latestCandle.close >= latestCandle.open ? '🟢 Bullish Action' : '🔴 Bearish Action'}
+                </span>
+              </div>
+              <span className="text-[11px] font-mono font-bold text-yellow-400">
+                Binomo Strategy #1 (EMA 8/21) & Candlestick Patterns
+              </span>
+            </div>
+          )}
+
           {/* OHLC Interactive Status Bar */}
           <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400">
             {hoverData ? (
