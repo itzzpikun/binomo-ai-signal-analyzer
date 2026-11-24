@@ -5,19 +5,28 @@ interface TradingViewWidgetProps {
   interval: string;
 }
 
-const SYMBOL_MAP: Record<string, string> = {
+const SPECIAL_TV_SYMBOLS: Record<string, string> = {
   'CRYPTO_IDX': 'BINANCE:BTCUSDT',
+  'CRYPTO IDX': 'BINANCE:BTCUSDT',
+  'BITCOIN (OTC)': 'BINANCE:BTCUSDT',
+  'ETHEREUM (OTC)': 'BINANCE:ETHUSDT',
+  'SOLANA (OTC)': 'BINANCE:SOLUSDT',
+  'AAVE (OTC)': 'BINANCE:AAVEUSDT',
+  'UNISWAP (OTC)': 'BINANCE:UNIUSDT',
+  'CHAINLINK (OTC)': 'BINANCE:LINKUSDT',
+  'PANCAKE SWAP (OTC)': 'BINANCE:CAKEUSDT',
+  'KUSAMA (OTC)': 'BINANCE:KSMUSDT',
+  'BITCOIN CASH (OTC)': 'BINANCE:BCHUSDT',
+  'BTC/USD (OTC)': 'BINANCE:BTCUSDT',
   'BTC/USD': 'BINANCE:BTCUSDT',
   'ETH/USD': 'BINANCE:ETHUSDT',
+  'SOL/USD': 'BINANCE:SOLUSDT',
   'BNB/USD': 'BINANCE:BNBUSDT',
-  'EUR/USD': 'FX:EURUSD',
-  'GBP/USD': 'FX:GBPUSD',
-  'USD/JPY': 'FX:USDJPY',
-  'USD/CHF': 'FX:USDCHF',
-  'AUD/USD': 'FX:AUDUSD',
+  'GOLD': 'OANDA:XAUUSD',
   'XAU/USD': 'OANDA:XAUUSD',
   'US30': 'FOREXCOM:DJI',
   'NAS100': 'NASDAQ:NDX',
+  'SPX500': 'FOREXCOM:SPX500',
 };
 
 const INTERVAL_MAP: Record<string, string> = {
@@ -26,10 +35,33 @@ const INTERVAL_MAP: Record<string, string> = {
   '15min': '15',
 };
 
+export function resolveTradingViewSymbol(rawSymbol: string): string {
+  const upper = (rawSymbol || '').toUpperCase().trim();
+  if (SPECIAL_TV_SYMBOLS[upper]) {
+    return SPECIAL_TV_SYMBOLS[upper];
+  }
+
+  // Strip (OTC) suffix if present
+  const clean = upper.replace(/\s*\(OTC\)/i, '').trim();
+  if (SPECIAL_TV_SYMBOLS[clean]) {
+    return SPECIAL_TV_SYMBOLS[clean];
+  }
+
+  // Standard forex pair format BASE/QUOTE e.g. EUR/USD -> FX:EURUSD
+  if (clean.includes('/')) {
+    const [base, quote] = clean.split('/');
+    if (base && quote) {
+      return `FX:${base.trim()}${quote.trim()}`;
+    }
+  }
+
+  return 'FX:EURUSD';
+}
+
 const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ symbol, interval }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const tvSymbol = SYMBOL_MAP[symbol.toUpperCase()] || 'FX:EURUSD';
+  const tvSymbol = resolveTradingViewSymbol(symbol);
   const tvInterval = INTERVAL_MAP[interval] || '5';
 
   useEffect(() => {
@@ -82,8 +114,8 @@ const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({ symbol, interval 
   }, [tvSymbol, tvInterval]);
 
   return (
-    <div className="w-full h-full min-h-[380px] sm:min-h-[440px] rounded-xl overflow-hidden bg-gray-950 border border-gray-800">
-      <div ref={containerRef} className="tradingview-widget-container w-full h-full min-h-[380px] sm:min-h-[440px]" />
+    <div className="w-full h-full min-h-[400px] sm:min-h-[460px] rounded-xl overflow-hidden bg-gray-950 border border-gray-800">
+      <div ref={containerRef} className="tradingview-widget-container w-full h-full min-h-[400px] sm:min-h-[460px]" />
     </div>
   );
 };

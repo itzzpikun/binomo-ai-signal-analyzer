@@ -45,12 +45,11 @@ const AssetSelector: React.FC = () => {
     setSearch('');
   };
 
-  const categories: AssetCategory[] = ['Forex', 'Crypto', 'Commodities', 'Indices', 'Binomo OTC'];
+  const categories: AssetCategory[] = ['Forex', 'Crypto', 'Commodities', 'Binomo OTC'];
   const categoryColors: Record<AssetCategory, string> = {
     Forex: 'text-blue-400',
     Crypto: 'text-orange-400',
     Commodities: 'text-yellow-400',
-    Indices: 'text-purple-400',
     'Binomo OTC': 'text-amber-400',
   };
 
