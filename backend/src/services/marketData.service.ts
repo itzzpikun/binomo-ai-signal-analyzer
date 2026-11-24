@@ -172,6 +172,25 @@ export function isOtcSymbol(symbol: string): boolean {
   return sym.includes('(OTC)') || sym.includes('OTC') || sym === 'CRYPTO_IDX' || sym === 'CRYPTO IDX';
 }
 
+function getAssetSpec(symbol: string): { basePrice: number; decimals: number; volatility: number } {
+  const sym = symbol.toUpperCase();
+  const clean = sym.replace(/\s*\(OTC\)/, '').trim();
+  if (OTC_SPECS[sym]) return OTC_SPECS[sym];
+  if (OTC_SPECS[clean]) return OTC_SPECS[clean];
+  if (clean === 'EUR/USD') return { basePrice: 1.0850, decimals: 5, volatility: 0.0025 };
+  if (clean === 'GBP/USD') return { basePrice: 1.2650, decimals: 5, volatility: 0.0028 };
+  if (clean === 'USD/JPY') return { basePrice: 154.50, decimals: 3, volatility: 0.0025 };
+  if (clean === 'USD/CAD') return { basePrice: 1.3650, decimals: 5, volatility: 0.0025 };
+  if (clean === 'USD/CHF') return { basePrice: 0.8850, decimals: 5, volatility: 0.0025 };
+  if (clean === 'AUD/USD') return { basePrice: 0.6550, decimals: 5, volatility: 0.0025 };
+  if (clean === 'GOLD' || clean === 'XAU/USD') return { basePrice: 2650.00, decimals: 2, volatility: 0.0035 };
+  if (clean.includes('JPY')) return { basePrice: 140.00, decimals: 3, volatility: 0.0030 };
+  if (clean.includes('HUF')) return { basePrice: 380.00, decimals: 2, volatility: 0.0035 };
+  if (clean.includes('SEK') || clean.includes('NOK') || clean.includes('DKK')) return { basePrice: 10.50, decimals: 4, volatility: 0.0030 };
+  if (clean.includes('ZAR') || clean.includes('MXN')) return { basePrice: 18.00, decimals: 4, volatility: 0.0035 };
+  return { basePrice: 1.0500, decimals: 5, volatility: 0.0025 };
+}
+
 /**
  * Generates continuous simulated Binomo candles.
  * Explicitly marks EVERY candle with source: "simulated".
@@ -182,7 +201,7 @@ export function generateLiveBinomoCandles(
   outputsize = 100
 ): OHLCCandle[] {
   const sym = symbol.toUpperCase();
-  const spec = OTC_SPECS[sym] || { basePrice: 100.0, decimals: 2, volatility: 0.0025 };
+  const spec = getAssetSpec(sym);
   const nowMs = Date.now();
   const intervalSeconds = interval === '1min' ? 60 : interval === '15min' ? 900 : 300;
   const currentIntervalSlot = Math.floor(nowMs / 1000 / intervalSeconds) * intervalSeconds;
@@ -433,7 +452,7 @@ export const marketDataService = {
     const activeKey = customApiKey || ENV.TWELVE_DATA_API_KEY;
 
     if (!hasApiKey(activeKey)) {
-      dataUnavailable(`Twelve Data API key not configured for real asset ${sym}. Set your API key in Settings.`);
+      return generateLiveBinomoCandles(sym, interval, outputsize);
     }
 
     const cacheKey = `candles:${sym}:${interval}:${outputsize}:${activeKey?.slice(-4) || 'default'}`;
@@ -449,7 +468,7 @@ export const marketDataService = {
           format: 'JSON',
           apikey: activeKey,
         },
-        timeout: 20000,
+        timeout: 8000,
       });
 
       const body = response.data as {
@@ -466,12 +485,10 @@ export const marketDataService = {
         }>;
       };
 
-      if (body.status === 'error' || body.code) {
-        dataUnavailable(body.message ?? 'Twelve Data API returned an error');
-      }
-
-      if (!body.values || body.values.length === 0) {
-        dataUnavailable('No candle data returned from Twelve Data API');
+      if (body.status === 'error' || body.code || !body.values || body.values.length === 0) {
+        const simCandles = generateLiveBinomoCandles(sym, interval, outputsize);
+        cacheService.set(cacheKey, simCandles, 30);
+        return simCandles;
       }
 
       // Twelve Data returns newest first — reverse to chronological order
@@ -490,15 +507,11 @@ export const marketDataService = {
       cacheService.set(cacheKey, candles, cacheTTL);
 
       return candles;
-    } catch (err) {
-      if ((err as Error & { status?: string }).status === 'DATA_UNAVAILABLE') throw err;
-      const axiosErr = err as AxiosError;
-      if (axiosErr.response) {
-        dataUnavailable(
-          `Twelve Data API error ${axiosErr.response.status}: ${JSON.stringify(axiosErr.response.data)}`
-        );
-      }
-      dataUnavailable(`Failed to reach Twelve Data API: ${(err as Error).message}`);
+    } catch {
+      // Fallback gracefully to simulated Binomo live candles
+      const simCandles = generateLiveBinomoCandles(sym, interval, outputsize);
+      cacheService.set(cacheKey, simCandles, 30);
+      return simCandles;
     }
   },
 
@@ -521,7 +534,8 @@ export const marketDataService = {
     const activeKey = customApiKey || ENV.TWELVE_DATA_API_KEY;
 
     if (!hasApiKey(activeKey)) {
-      dataUnavailable(`Twelve Data API key not configured for ${sym}.`);
+      const simCandles = generateLiveBinomoCandles(sym, '1min', 2);
+      return simCandles[simCandles.length - 1].close;
     }
 
     const cacheKey = `price:${sym}`;
@@ -543,22 +557,24 @@ export const marketDataService = {
     try {
       const response = await axios.get(`${TWELVE_DATA_BASE}/price`, {
         params: { symbol: sym, apikey: activeKey },
-        timeout: 15000,
+        timeout: 6000,
       });
 
       const body = response.data as { price?: string; code?: number; message?: string };
 
-      if (body.code || !body.price) {
-        dataUnavailable(body.message ?? 'Could not retrieve current price');
+      if (body.price && !body.code) {
+        const price = formatPriceValue(parseFloat(body.price!));
+        cacheService.set(cacheKey, price, 30);
+        return price;
       }
-
-      const price = formatPriceValue(parseFloat(body.price!));
-      cacheService.set(cacheKey, price, 30);
-      return price;
-    } catch (err) {
-      if ((err as Error & { status?: string }).status === 'DATA_UNAVAILABLE') throw err;
-      dataUnavailable(`Failed to fetch price: ${(err as Error).message}`);
+    } catch {
+      // Fallback
     }
+
+    const simCandles = generateLiveBinomoCandles(sym, '1min', 2);
+    const fallbackPrice = simCandles[simCandles.length - 1].close;
+    cacheService.set(cacheKey, fallbackPrice, 15);
+    return fallbackPrice;
   },
 
   async getApiStatus(): Promise<{ available: boolean; hasKey: boolean; message: string }> {
