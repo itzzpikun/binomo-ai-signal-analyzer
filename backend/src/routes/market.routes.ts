@@ -4,14 +4,9 @@
 import { Router } from 'express';
 import { query } from 'express-validator';
 import marketController from '../controllers/market.controller';
+import { isValidSymbol, VALID_INTERVALS } from '../services/marketData.service';
 
 const router = Router();
-
-const VALID_SYMBOLS = [
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD',
-  'BTC/USD', 'ETH/USD', 'XAU/USD', 'US30', 'NAS100', 'CRYPTO_IDX',
-];
-const VALID_INTERVALS = ['1min', '5min', '15min'];
 
 // GET /api/market/candles?symbol=EUR/USD&interval=5min&outputsize=100
 router.get(
@@ -21,9 +16,12 @@ router.get(
       .optional()
       .isString()
       .trim()
-      .toUpperCase()
-      .isIn(VALID_SYMBOLS)
-      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
+      .custom((val) => {
+        if (!isValidSymbol(val)) {
+          throw new Error(`Unsupported symbol: ${val}`);
+        }
+        return true;
+      }),
     query('interval')
       .optional()
       .isString()
@@ -48,9 +46,12 @@ router.get(
       .notEmpty()
       .isString()
       .trim()
-      .toUpperCase()
-      .isIn(VALID_SYMBOLS)
-      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
+      .custom((val) => {
+        if (!isValidSymbol(val)) {
+          throw new Error(`Unsupported symbol: ${val}`);
+        }
+        return true;
+      }),
   ],
   marketController.getPrice.bind(marketController)
 );

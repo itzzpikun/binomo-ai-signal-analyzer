@@ -122,8 +122,18 @@ const SUPPORTED_ASSETS: AssetCategory[] = [
   },
 ];
 
-const VALID_SYMBOLS = SUPPORTED_ASSETS.flatMap((cat) => cat.assets.map((a) => a.symbol));
-const VALID_INTERVALS = ['1min', '5min', '15min'];
+export const VALID_SYMBOLS = Array.from(
+  new Set(SUPPORTED_ASSETS.flatMap((cat) => cat.assets.map((a) => a.symbol)))
+);
+export const VALID_INTERVALS = ['1min', '5min', '15min'];
+
+export function isValidSymbol(symbol: string): boolean {
+  if (!symbol || typeof symbol !== 'string') return false;
+  const upper = symbol.trim().toUpperCase();
+  if (isOtcSymbol(upper)) return true;
+  if (['XAU/USD', 'BTC/USD', 'ETH/USD', 'BNB/USD', 'SOL/USD', 'CRYPTO_IDX', 'GOLD'].includes(upper)) return true;
+  return VALID_SYMBOLS.some((s) => s.toUpperCase() === upper);
+}
 
 const OTC_SPECS: Record<string, { basePrice: number; decimals: number; volatility: number }> = {
   'CRYPTO_IDX': { basePrice: 6245.50, decimals: 2, volatility: 0.0035 },
@@ -379,7 +389,7 @@ export const marketDataService = {
   },
 
   validateSymbol(symbol: string): void {
-    if (!VALID_SYMBOLS.includes(symbol.toUpperCase()) && !isOtcSymbol(symbol)) {
+    if (!isValidSymbol(symbol)) {
       throw Object.assign(new Error(`Unsupported symbol: ${symbol}`), {
         statusCode: 400,
         status: 'VALIDATION_ERROR',

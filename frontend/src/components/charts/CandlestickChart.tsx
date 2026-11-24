@@ -10,8 +10,8 @@ const CHART_COLORS = {
   text: '#94a3b8',
   grid: '#1e293b',
   border: '#334155',
-  up: '#10b981',
-  down: '#ef4444',
+  up: '#00b875', // Binomo vibrant green
+  down: '#ff4757', // Binomo vivid red
   ema9: '#38bdf8',
   ema21: '#f59e0b',
   crosshair: '#64748b',
@@ -47,8 +47,8 @@ const CandlestickChart: React.FC = () => {
   const selectedInterval = useAppStore((s) => s.selectedInterval);
   const isSimulated = useAppStore((s) => s.isSimulated);
 
-  // Active chart engine: TradingView Live View vs AI Pro Chart vs Binomo Live Candles
-  const [chartMode, setChartMode] = useState<'tradingview' | 'ai' | 'binomo'>('tradingview');
+  // Active chart engine: Binomo Live Candles (Primary/Default) vs TradingView vs AI Pro Chart
+  const [chartMode, setChartMode] = useState<'binomo' | 'tradingview' | 'ai'>('binomo');
 
   // Live hover candle details
   const [hoverData, setHoverData] = useState<{
@@ -147,26 +147,30 @@ const CandlestickChart: React.FC = () => {
       borderDownColor: CHART_COLORS.down,
       wickUpColor: CHART_COLORS.up,
       wickDownColor: CHART_COLORS.down,
+      priceLineVisible: true,
+      lastValueVisible: true,
     });
     candleSeriesRef.current = candleSeries;
 
-    // EMA9 line
+    // EMA9 line (visible in AI Pro mode)
     const ema9Series = chart.addLineSeries({
       color: CHART_COLORS.ema9,
-      lineWidth: 1,
+      lineWidth: 1.5,
       title: 'EMA9',
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: chartMode === 'ai',
     });
     ema9SeriesRef.current = ema9Series;
 
-    // EMA21 line
+    // EMA21 line (visible in AI Pro mode)
     const ema21Series = chart.addLineSeries({
       color: CHART_COLORS.ema21,
-      lineWidth: 1,
+      lineWidth: 1.5,
       title: 'EMA21',
       priceLineVisible: false,
       lastValueVisible: false,
+      visible: chartMode === 'ai',
     });
     ema21SeriesRef.current = ema21Series;
 
@@ -257,6 +261,20 @@ const CandlestickChart: React.FC = () => {
     updateData(candles);
   }, [candles, updateData]);
 
+  // Handle switching chart modes without unmounting canvas
+  useEffect(() => {
+    if (ema9SeriesRef.current && ema21SeriesRef.current) {
+      ema9SeriesRef.current.applyOptions({ visible: chartMode === 'ai' });
+      ema21SeriesRef.current.applyOptions({ visible: chartMode === 'ai' });
+    }
+    if (chartMode !== 'tradingview' && chartRef.current && containerRef.current) {
+      const w = containerRef.current.clientWidth || 600;
+      const h = Math.max(containerRef.current.clientHeight || 0, 380);
+      chartRef.current.applyOptions({ width: w, height: h });
+      chartRef.current.timeScale().fitContent();
+    }
+  }, [chartMode]);
+
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
@@ -293,34 +311,35 @@ const CandlestickChart: React.FC = () => {
           {/* Chart View Mode Switcher */}
           <div className="flex items-center gap-1 bg-gray-950 border border-gray-800 p-0.5 rounded-lg">
             <button
-              onClick={() => setChartMode('tradingview')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
-                chartMode === 'tradingview'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-gray-200'
+              onClick={() => setChartMode('binomo')}
+              className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
+                chartMode === 'binomo'
+                  ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-md shadow-yellow-500/20'
+                  : 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10'
               }`}
             >
-              📈 TradingView Live
+              <span>🟡 Binomo Live Candles</span>
+              <span className="text-[9px] bg-black/20 text-black px-1 rounded uppercase font-mono font-extrabold">LIVE</span>
+            </button>
+            <button
+              onClick={() => setChartMode('tradingview')}
+              className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
+                chartMode === 'tradingview'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+              }`}
+            >
+              📈 TradingView
             </button>
             <button
               onClick={() => setChartMode('ai')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+              className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
                 chartMode === 'ai'
                   ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-gray-200'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
               }`}
             >
-              📊 AI Pro Chart
-            </button>
-            <button
-              onClick={() => setChartMode('binomo')}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all flex items-center gap-1 ${
-                chartMode === 'binomo'
-                  ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-sm font-bold'
-                  : 'text-yellow-400 hover:text-yellow-300'
-              }`}
-            >
-              <span>🟡 Binomo Candles</span>
+              📊 AI Confluence
             </button>
           </div>
 
@@ -381,66 +400,72 @@ const CandlestickChart: React.FC = () => {
         </div>
       </div>
 
-      {chartMode === 'tradingview' ? (
-        <div className="flex-1 w-full min-h-[380px] sm:min-h-[440px] p-1">
-          <TradingViewWidget symbol={selectedSymbol} interval={selectedInterval} />
-        </div>
-      ) : (
-        <>
-          {/* Binomo Live Candlestick HUD */}
-          {chartMode === 'binomo' && latestCandle && (
-            <div className="px-3 py-1.5 bg-yellow-950/40 border-b border-yellow-500/30 flex items-center justify-between text-xs text-yellow-300 flex-wrap gap-1">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-yellow-400 flex items-center gap-1">
-                  <span>🟡</span>
-                  <span>Binomo Live Candlestick Feed</span>
-                </span>
-                <span className="text-[11px] text-gray-300">
-                  • Body: {Math.round((Math.abs(latestCandle.close - latestCandle.open) / Math.max(latestCandle.high - latestCandle.low, 0.0001)) * 100)}%
-                </span>
-                <span className="text-[11px] font-semibold">
-                  {latestCandle.close >= latestCandle.open ? '🟢 Bullish Action' : '🔴 Bearish Action'}
-                </span>
-              </div>
-              <span className="text-[11px] font-mono font-bold text-yellow-400">
-                Binomo Strategy #1 (EMA 8/21) & Candlestick Patterns
+      {/* TradingView Widget Container — Kept in DOM, display toggled */}
+      <div
+        className="flex-1 w-full min-h-[380px] sm:min-h-[440px] p-1"
+        style={{ display: chartMode === 'tradingview' ? 'block' : 'none' }}
+      >
+        <TradingViewWidget symbol={selectedSymbol} interval={selectedInterval} />
+      </div>
+
+      {/* Lightweight Charts / Binomo Candlestick Canvas Container */}
+      <div
+        className="flex-1 w-full flex flex-col min-h-[380px] sm:min-h-[440px]"
+        style={{ display: chartMode !== 'tradingview' ? 'flex' : 'none' }}
+      >
+        {/* Binomo Live Candlestick HUD */}
+        {chartMode === 'binomo' && latestCandle && (
+          <div className="px-3 py-1.5 bg-yellow-950/40 border-b border-yellow-500/30 flex items-center justify-between text-xs text-yellow-300 flex-wrap gap-1">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-yellow-400 flex items-center gap-1">
+                <span>🟡</span>
+                <span>Binomo Live Candlestick Feed</span>
+              </span>
+              <span className="text-[11px] text-gray-300">
+                • Body: {Math.round((Math.abs(latestCandle.close - latestCandle.open) / Math.max(latestCandle.high - latestCandle.low, 0.0001)) * 100)}%
+              </span>
+              <span className="text-[11px] font-semibold">
+                {latestCandle.close >= latestCandle.open ? '🟢 Bullish Action' : '🔴 Bearish Action'}
               </span>
             </div>
-          )}
-
-          {/* OHLC Interactive Status Bar */}
-          <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400">
-            {hoverData ? (
-              <>
-                <span className="text-gray-500">{hoverData.time}</span>
-                <span>O: <span className="text-gray-200">{hoverData.open?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span>H: <span className="text-gray-200">{hoverData.high?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span>L: <span className="text-gray-200">{hoverData.low?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span>C: <span className="text-gray-200">{hoverData.close?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span className={hoverData.change && hoverData.change >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
-                  {hoverData.change && hoverData.change >= 0 ? '+' : ''}{hoverData.change?.toFixed(3)}%
-                </span>
-              </>
-            ) : latestCandle ? (
-              <>
-                <span className="text-gray-500 hidden sm:inline">Latest:</span>
-                <span>O: <span className="text-gray-300">{latestCandle.open.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span>H: <span className="text-gray-300">{latestCandle.high.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span>L: <span className="text-gray-300">{latestCandle.low.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span>C: <span className="text-gray-300">{latestCandle.close.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
-                <span className={isUp ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
-                  {isUp ? '+' : ''}{candleChange.toFixed(3)}%
-                </span>
-              </>
-            ) : (
-              <span className="text-gray-600">Tap or hover candles to inspect details</span>
-            )}
+            <span className="text-[11px] font-mono font-bold text-yellow-400">
+              Binomo Strategy #1 (EMA 8/21) & Candlestick Patterns
+            </span>
           </div>
+        )}
 
-          {/* Lightweight Charts Canvas */}
-          <div ref={containerRef} className="flex-1 w-full min-h-[380px] sm:min-h-[440px]" />
-        </>
-      )}
+        {/* OHLC Interactive Status Bar */}
+        <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400">
+          {hoverData ? (
+            <>
+              <span className="text-gray-500">{hoverData.time}</span>
+              <span>O: <span className="text-gray-200">{hoverData.open?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span>H: <span className="text-gray-200">{hoverData.high?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span>L: <span className="text-gray-200">{hoverData.low?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span>C: <span className="text-gray-200">{hoverData.close?.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span className={hoverData.change && hoverData.change >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
+                {hoverData.change && hoverData.change >= 0 ? '+' : ''}{hoverData.change?.toFixed(3)}%
+              </span>
+            </>
+          ) : latestCandle ? (
+            <>
+              <span className="text-gray-500 hidden sm:inline">Latest:</span>
+              <span>O: <span className="text-gray-300">{latestCandle.open.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span>H: <span className="text-gray-300">{latestCandle.high.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span>L: <span className="text-gray-300">{latestCandle.low.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span>C: <span className="text-gray-300">{latestCandle.close.toFixed(selectedSymbol.includes('USD') && !selectedSymbol.includes('BTC') ? 5 : 2)}</span></span>
+              <span className={isUp ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
+                {isUp ? '+' : ''}{candleChange.toFixed(3)}%
+              </span>
+            </>
+          ) : (
+            <span className="text-gray-600">Tap or hover candles to inspect details</span>
+          )}
+        </div>
+
+        {/* Lightweight Charts Canvas */}
+        <div ref={containerRef} className="flex-1 w-full min-h-[380px] sm:min-h-[440px]" />
+      </div>
     </div>
   );
 };

@@ -4,13 +4,9 @@
 import { Router } from 'express';
 import { param } from 'express-validator';
 import performanceController from '../controllers/performance.controller';
+import { isValidSymbol } from '../services/marketData.service';
 
 const router = Router();
-
-const VALID_SYMBOLS = [
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD',
-  'BTC/USD', 'ETH/USD', 'XAU/USD', 'US30', 'NAS100', 'CRYPTO_IDX',
-];
 
 // GET /api/performance/summary
 router.get('/summary', performanceController.getSummary.bind(performanceController));
@@ -22,9 +18,12 @@ router.get(
     param('symbol')
       .isString()
       .trim()
-      .toUpperCase()
-      .isIn(VALID_SYMBOLS)
-      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
+      .custom((val) => {
+        if (!isValidSymbol(val)) {
+          throw new Error(`Unsupported symbol: ${val}`);
+        }
+        return true;
+      }),
   ],
   performanceController.getBySymbol.bind(performanceController)
 );

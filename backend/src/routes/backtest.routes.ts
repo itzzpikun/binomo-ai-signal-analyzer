@@ -5,14 +5,9 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import backtestController from '../controllers/backtest.controller';
 import { analysisRateLimiter } from '../middleware/rateLimiter';
+import { isValidSymbol, VALID_INTERVALS } from '../services/marketData.service';
 
 const router = Router();
-
-const VALID_SYMBOLS = [
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD',
-  'BTC/USD', 'ETH/USD', 'XAU/USD', 'US30', 'NAS100', 'CRYPTO_IDX',
-];
-const VALID_INTERVALS = ['1min', '5min', '15min'];
 
 // POST /api/backtest/run
 router.post(
@@ -23,9 +18,12 @@ router.post(
       .notEmpty()
       .isString()
       .trim()
-      .toUpperCase()
-      .isIn(VALID_SYMBOLS)
-      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
+      .custom((val) => {
+        if (!isValidSymbol(val)) {
+          throw new Error(`Unsupported symbol: ${val}`);
+        }
+        return true;
+      }),
     body('interval')
       .notEmpty()
       .isIn(VALID_INTERVALS)
