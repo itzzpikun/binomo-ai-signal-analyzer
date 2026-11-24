@@ -10,20 +10,24 @@ interface SignalCardProps {
 }
 
 const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
-  // Candle close countdown (default 5-min candle = 300s)
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
+  // Candle close countdown computed from actual signal interval
+  const intervalSecs = signal?.interval === '1min' ? 60 : signal?.interval === '15min' ? 900 : 300;
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(() => {
+    const now = Math.floor(Date.now() / 1000);
+    return intervalSecs - (now % intervalSecs);
+  });
   const [showBinomoModal, setShowBinomoModal] = useState<boolean>(false);
 
   useEffect(() => {
     const updateCountdown = () => {
       const now = Math.floor(Date.now() / 1000);
-      const remaining = 300 - (now % 300); // 5 min interval
+      const remaining = intervalSecs - (now % intervalSecs);
       setSecondsRemaining(remaining);
     };
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [intervalSecs]);
 
   // Format mm:ss
   const formatTime = (secs: number) => {
@@ -32,10 +36,10 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Entry window logic: First 15 seconds of a 300s candle is when remaining is between 285 and 300
-  const isEntryWindowActive = secondsRemaining >= 285 && secondsRemaining <= 300;
-  // Prepare alert: Last 30 seconds of previous candle (remaining <= 30)
-  const isPrepareWindow = secondsRemaining <= 30;
+  // Entry window logic: First 10 seconds of newly opened candle
+  const isEntryWindowActive = secondsRemaining >= (intervalSecs - 10) && secondsRemaining <= intervalSecs;
+  // Prepare alert: Last 15 seconds of previous candle
+  const isPrepareWindow = secondsRemaining <= 15;
 
   if (isAnalyzing && !signal) {
     return (
@@ -189,7 +193,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
                 ACTIVE ENTRY WINDOW NOW!
               </span>
               <p className="text-emerald-200/90 text-[11px] mt-0.5">
-                New 5M candle has opened. Execute <b>{signal.direction}</b> on Binomo within next 15 seconds!
+                New {signal.interval} candle has opened. Execute <b>{signal.direction}</b> on Binomo within next 10 seconds!
               </p>
             </div>
           </div>
@@ -203,7 +207,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
                 GET READY ON BINOMO! (In {formatTime(secondsRemaining)})
               </span>
               <p className="text-amber-200/90 text-[11px] mt-0.5">
-                Next candle opens in {secondsRemaining}s. Set 5M expiry and be ready to press {signal.direction}!
+                Next candle opens in {secondsRemaining}s. Set {signal.interval} expiry and be ready to press {signal.direction}!
               </p>
             </div>
           </div>
@@ -228,17 +232,17 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         <div className="grid grid-cols-2 gap-1.5 sm:gap-2 text-[11px] font-mono mt-0.5">
           <div className="bg-gray-900/60 p-2 rounded-lg border border-gray-800/80">
             <span className="text-gray-500 block text-[10px]">Expiry:</span>
-            <span className="text-gray-200 font-bold text-xs">5 Min (Fixed)</span>
+            <span className="text-gray-200 font-bold text-xs">{signal.interval} (Fixed)</span>
           </div>
           <div className="bg-gray-900/60 p-2 rounded-lg border border-gray-800/80">
             <span className="text-gray-500 block text-[10px]">Entry Moment:</span>
-            <span className="text-amber-300 font-bold text-xs">Open (0-15s)</span>
+            <span className="text-amber-300 font-bold text-xs">Open (0-10s)</span>
           </div>
         </div>
 
         {/* Hindi Rule summary */}
         <p className="text-[11px] text-gray-400 italic bg-gray-900/30 p-2 rounded border border-gray-800/40">
-          💡 <b>Rule:</b> 5-minute candle ke open hote hi pehle 10-15 seconds me trade lein. Mid-candle (beech me) trade lene se bachein.
+          💡 <b>Rule:</b> {signal.interval} candle ke open hote hi pehle 0-10 seconds me trade lein. Mid-candle (beech me) trade lene se bachein.
         </p>
       </div>
 
@@ -327,10 +331,10 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
         <ConfidenceBar confidence={signal.confidence} direction={signal.direction} />
       </div>
 
-      {/* Timestamp */}
+      {/* Timestamp & Confluence Score */}
       <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-800/60">
         <span>Signal Gen: {format(new Date(signal.timestamp), 'HH:mm:ss')} UTC</span>
-        <span>Confluence: {signal.confluence_score ?? 85}%</span>
+        <span>Confluence Score: {signal.confluence_score !== undefined && signal.confluence_score !== null ? `${signal.confluence_score}%` : `${Math.round(signal.confidence)}%`}</span>
       </div>
 
       {/* Binomo Platform Integration Modal */}

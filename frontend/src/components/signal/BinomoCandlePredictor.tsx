@@ -82,116 +82,111 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
     // Detect Japanese Candlestick Patterns for Binomo 1M/5M
     let patternName = 'Normal Price Candle';
     let patternType: 'bullish' | 'bearish' | 'neutral' = 'neutral';
-    let rejectionReason = 'Normal trading range';
+    let rejectionReason = 'Normal trading range without dominant wick rejection.';
     let strategyName = 'Binomo Price Action Confluence';
     let predictedDirection: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
-    let confidence = 65;
+    // Use real model confidence from technical analysis engine if available
+    const engineConfidence = signal ? Math.round(signal.confidence) : null;
 
-    // Pattern 1: Bullish Pin Bar / Hammer
+    // Pattern 1: Bullish Pin Bar / Hammer (lower wick >= 55% of range)
     if (lowerWickPercent >= 55 && upperWickPercent <= 20) {
       patternName = 'Bullish Pin Bar / Hammer';
       patternType = 'bullish';
-      rejectionReason = `Strong lower wick rejection (${lowerWickPercent}%). Buyers aggressively defending support level.`;
+      rejectionReason = `Lower wick rejection measured at ${lowerWickPercent}% of range. Buyer defense detected at support.`;
       strategyName = 'Binomo Pin Bar Reversal Strategy';
       predictedDirection = 'CALL';
-      confidence = 84;
     }
-    // Pattern 2: Bearish Pin Bar / Shooting Star
+    // Pattern 2: Bearish Pin Bar / Shooting Star (upper wick >= 55% of range)
     else if (upperWickPercent >= 55 && lowerWickPercent <= 20) {
       patternName = 'Shooting Star / Bearish Pin Bar';
       patternType = 'bearish';
-      rejectionReason = `Upper wick rejection (${upperWickPercent}%). Sellers rejecting higher prices at resistance.`;
+      rejectionReason = `Upper wick rejection measured at ${upperWickPercent}% of range. Seller rejection detected at resistance.`;
       strategyName = 'Binomo Resistance Rejection Strategy';
       predictedDirection = 'PUT';
-      confidence = 84;
     }
     // Pattern 3: Bullish Engulfing
     else if (isBullish && c1.close < c1.open && c0.close > c1.open && c0.open <= c1.close) {
       patternName = 'Bullish Engulfing Pattern';
       patternType = 'bullish';
-      rejectionReason = 'Green candle completely engulfs previous red candle body. Bullish momentum breakout.';
+      rejectionReason = 'Green candle body fully covers previous red candle body.';
       strategyName = 'Binomo Trend Reversal #1';
       predictedDirection = 'CALL';
-      confidence = 87;
     }
     // Pattern 4: Bearish Engulfing
     else if (isBearish && c1.close > c1.open && c0.close < c1.open && c0.open >= c1.close) {
       patternName = 'Bearish Engulfing Pattern';
       patternType = 'bearish';
-      rejectionReason = 'Red candle completely engulfs previous green candle body. Strong selling wave.';
+      rejectionReason = 'Red candle body fully covers previous green candle body.';
       strategyName = 'Binomo Trend Reversal #1';
       predictedDirection = 'PUT';
-      confidence = 87;
     }
     // Pattern 5: Strong Momentum Marubozu
     else if (bodyPercent >= 80) {
       if (isBullish) {
         patternName = 'Bullish Marubozu (Power Green)';
         patternType = 'bullish';
-        rejectionReason = `Large solid green candle body (${bodyPercent}%). Aggressive buyer momentum without pullbacks.`;
+        rejectionReason = `Solid green candle body covers ${bodyPercent}% of candle range.`;
         strategyName = 'Binomo Strategy #2: Trend Continuation';
         predictedDirection = 'CALL';
-        confidence = 82;
       } else {
         patternName = 'Bearish Marubozu (Power Red)';
         patternType = 'bearish';
-        rejectionReason = `Large solid red candle body (${bodyPercent}%). Heavy downward selling pressure.`;
+        rejectionReason = `Solid red candle body covers ${bodyPercent}% of candle range.`;
         strategyName = 'Binomo Strategy #2: Trend Continuation';
         predictedDirection = 'PUT';
-        confidence = 82;
       }
     }
     // Pattern 6: Inside Bar Breakout
     else if (c0.high <= c1.high && c0.low >= c1.low) {
       patternName = 'Inside Bar (Compression)';
       patternType = 'neutral';
-      rejectionReason = 'Price compressing inside previous candle. Breakout imminent on next candle.';
+      rejectionReason = 'Price range compressed completely inside previous candle.';
       strategyName = 'Binomo Volatility Squeeze';
       predictedDirection = 'WAIT';
-      confidence = 60;
     }
     // Pattern 7: Morning Star / Evening Star (3-candle sequence)
     else if (c2.close < c2.open && Math.abs(c1.close - c1.open) < (c2.open - c2.low) * 0.3 && isBullish && c0.close > (c2.open + c2.close) / 2) {
       patternName = 'Morning Star (3-Candle Reversal)';
       patternType = 'bullish';
-      rejectionReason = 'Classic 3-candle reversal: Strong drop, indecision star, followed by strong green surge.';
+      rejectionReason = '3-candle reversal confirmed: drop, base star, upward candle close above midpoint.';
       strategyName = 'Binomo Morning Star Reversal';
       predictedDirection = 'CALL';
-      confidence = 89;
     }
     else if (c2.close > c2.open && Math.abs(c1.close - c1.open) < (c2.high - c2.low) * 0.3 && isBearish && c0.close < (c2.open + c2.close) / 2) {
       patternName = 'Evening Star (3-Candle Reversal)';
       patternType = 'bearish';
-      rejectionReason = 'Classic 3-candle reversal: Strong rally, star top, followed by strong red decline.';
+      rejectionReason = '3-candle reversal confirmed: rally, top star, downward candle close below midpoint.';
       strategyName = 'Binomo Evening Star Reversal';
       predictedDirection = 'PUT';
-      confidence = 89;
     }
     // Pattern 8: Incorporate EMA 8/21 Trend Confluence from Signal if available
     else if (signal) {
       if (signal.direction === 'CALL') {
         patternName = isBullish ? 'Trend Continuation (EMA 8 Pullback)' : 'Bullish Pullback Dip';
         patternType = 'bullish';
-        rejectionReason = 'EMA 8/21 bullish alignment with upward momentum pressure.';
+        rejectionReason = 'EMA 8/21 bullish alignment with upward momentum.';
         strategyName = 'Binomo Strategy #1 (EMA 8 / EMA 21 Cross)';
         predictedDirection = 'CALL';
-        confidence = Math.max(signal.confidence, 76);
       } else if (signal.direction === 'PUT') {
         patternName = isBearish ? 'Trend Continuation (EMA 8 Drop)' : 'Bearish Pullback Peak';
         patternType = 'bearish';
-        rejectionReason = 'EMA 8/21 bearish alignment with downward momentum pressure.';
+        rejectionReason = 'EMA 8/21 bearish alignment with downward momentum.';
         strategyName = 'Binomo Strategy #1 (EMA 8 / EMA 21 Cross)';
         predictedDirection = 'PUT';
-        confidence = Math.max(signal.confidence, 76);
       } else {
-        patternName = isDoji ? 'Doji (Indecision)' : 'Sideways Consolidation';
+        patternName = isDoji ? 'Doji (Indecision)' : 'Consolidation Range';
         patternType = 'neutral';
-        rejectionReason = 'Market is ranging without decisive trend. Awaiting clearer breakout.';
+        rejectionReason = 'Market is consolidating without clear trend direction.';
         strategyName = 'Binomo Strategy: Wait for Clear Candlestick';
         predictedDirection = 'WAIT';
-        confidence = 55;
       }
     }
+
+    // Honest computed confidence: directly from the 10-indicator engine if available,
+    // otherwise derived from measurable geometric strength (wick ratio / body ratio).
+    const confidence = engineConfidence !== null
+      ? engineConfidence
+      : Math.round(Math.max(lowerWickPercent, upperWickPercent, bodyPercent));
 
     // Entry timing classification:
     // When remaining <= 10s: Prepare
@@ -337,7 +332,7 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
             <span>NEXT CANDLE PREDICTION (अगली कैंडल क्या बनेगी)</span>
           </span>
           <span className={clsx('text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border', themeConfig.badge)}>
-            {analysis.confidence}% Accuracy Setup
+            {analysis.confidence}% Confluence Score
           </span>
         </div>
 
@@ -366,8 +361,8 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
               <span className="text-xs font-mono font-bold text-yellow-400">1 Min (Fixed)</span>
             </div>
             <div className="bg-gray-950/80 px-2.5 py-1.5 rounded-lg border border-gray-800 text-right">
-              <span className="text-[10px] text-gray-400 block">Binomo Payout</span>
-              <span className="text-xs font-mono font-bold text-emerald-400">85% - 90%</span>
+              <span className="text-[10px] text-gray-400 block">Broker Payout</span>
+              <span className="text-xs font-mono font-bold text-gray-300" title="Payout percentage is set dynamically by broker for each asset">Broker Live Rate</span>
             </div>
           </div>
         </div>
