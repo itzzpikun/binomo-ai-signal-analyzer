@@ -225,6 +225,110 @@ def validate_candles(candles: List[Dict[str, Any]], symbol: str, interval: str =
     }
 
 
+YAHOO_SYMBOL_MAP: Dict[str, str] = {
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "USDJPY=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/CAD": "USDCAD=X",
+    "NZD/USD": "NZDUSD=X",
+    "EUR/GBP": "EURGBP=X",
+    "GBP/JPY": "GBPJPY=X",
+    "EUR/CAD": "EURCAD=X",
+    "AUD/CAD": "AUDCAD=X",
+    "GOLD": "GC=F",
+    "XAU/USD": "GC=F",
+    "BTC/USD": "BTC-USD",
+    "ETH/USD": "ETH-USD",
+    "SOL/USD": "SOL-USD",
+    "BTCUSDT": "BTC-USD",
+    "ETHUSDT": "ETH-USD",
+    "SOLUSDT": "SOL-USD",
+}
+
+COINBASE_PRODUCT_MAP: Dict[str, str] = {
+    "BTC/USD": "BTC-USD",
+    "BTCUSDT": "BTC-USD",
+    "ETH/USD": "ETH-USD",
+    "ETHUSDT": "ETH-USD",
+    "SOL/USD": "SOL-USD",
+    "SOLUSDT": "SOL-USD",
+}
+
+
+def _fetch_yahoo_finance(symbol: str, interval: str, limit: int) -> List[Dict[str, Any]]:
+    """Fetch genuine real-time timestamped candles from Yahoo Finance."""
+    sym = YAHOO_SYMBOL_MAP.get(symbol.upper()) or YAHOO_SYMBOL_MAP.get(symbol)
+    if not sym:
+        # Try stripping OTC or slash
+        clean = symbol.replace("(OTC)", "").strip().upper()
+        sym = YAHOO_SYMBOL_MAP.get(clean)
+    if not sym:
+        return []
+
+    y_interval = "1m" if interval == "1min" else ("5m" if interval == "5min" else "15m")
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval={y_interval}&range=1d"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
+    try:
+        with urllib.request.urlopen(req, timeout=4.5) as resp:
+            data = json.loads(resp.read().decode())
+            chart = data.get("chart", {}).get("result", [])
+            if not chart:
+                return []
+            res = chart[0]
+            timestamps = res.get("timestamp", [])
+            quotes = res.get("indicators", {}).get("quote", [{}])[0]
+            candles = []
+            for i in range(len(timestamps)):
+                o = quotes.get("open", [None])[i]
+                h = quotes.get("high", [None])[i]
+                l = quotes.get("low", [None])[i]
+                c = quotes.get("close", [None])[i]
+                v = quotes.get("volume", [0])[i] or 0
+                if o is not None and c is not None and l is not None and h is not None:
+                    candles.append({
+                        "timestamp": datetime.fromtimestamp(timestamps[i], tz=timezone.utc).isoformat(),
+                        "open": float(o),
+                        "high": float(h),
+                        "low": float(l),
+                        "close": float(c),
+                        "volume": float(v),
+                    })
+            return candles[-limit:]
+    except Exception as e:
+        logger.debug("Yahoo Finance fetch error for %s: %s", symbol, e)
+        return []
+
+
+def _fetch_coinbase(symbol: str, interval: str, limit: int) -> List[Dict[str, Any]]:
+    """Fetch genuine crypto klines from Coinbase Exchange."""
+    product = COINBASE_PRODUCT_MAP.get(symbol.upper())
+    if not product:
+        return []
+    granularity = 60 if interval == "1min" else (300 if interval == "5min" else 900)
+    url = f"https://api.exchange.coinbase.com/products/{product}/candles?granularity={granularity}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=4.5) as resp:
+            data = json.loads(resp.read().decode())
+            candles = []
+            for item in data:
+                # [time, low, high, open, close, volume]
+                candles.append({
+                    "timestamp": datetime.fromtimestamp(item[0], tz=timezone.utc).isoformat(),
+                    "open": float(item[3]),
+                    "high": float(item[2]),
+                    "low": float(item[1]),
+                    "close": float(item[4]),
+                    "volume": float(item[5]),
+                })
+            candles.sort(key=lambda x: x["timestamp"])
+            return candles[-limit:]
+    except Exception as e:
+        logger.debug("Coinbase fetch error for %s: %s", symbol, e)
+        return []
+
+
 def fetch_genuine_candles(symbol: str, interval: str = "1min", limit: int = 100) -> List[Dict[str, Any]]:
     """
     Fetch genuine, timestamped candles from authorized providers.
@@ -244,40 +348,69 @@ def fetch_genuine_candles(symbol: str, interval: str = "1min", limit: int = 100)
         if now - cached_time < 8.0:
             return cached_data
 
-    # 1. Binance Public API for Crypto
-    if spec.get("provider") == "binance" and spec.get("providerSymbol"):
+    # A. If Crypto: Try Coinbase -> Binance -> Yahoo Finance
+    if spec.get("category") == "Crypto":
+        cb_candles = _fetch_coinbase(spec.get("providerSymbol") or spec["symbol"], interval, limit)
+        if cb_candles:
+            sorted_c = sanitize_and_sort_candles(cb_candles)
+            if sorted_c:
+                _CACHE[cache_key] = (now, sorted_c)
+                return sorted_c
+
+        # Try Binance
         try:
             b_interval = "1m" if interval == "1min" else ("5m" if interval == "5min" else "15m")
-            url = f"https://api.binance.com/api/v3/klines?symbol={spec['providerSymbol']}&interval={b_interval}&limit={min(limit + 1, 500)}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=4.5) as resp:
-                data = json.loads(resp.read().decode())
-                candles = [
-                    {
-                        "timestamp": datetime.fromtimestamp(item[0] / 1000.0, tz=timezone.utc).isoformat(),
-                        "open": float(item[1]),
-                        "high": float(item[2]),
-                        "low": float(item[3]),
-                        "close": float(item[4]),
-                        "volume": float(item[5]),
-                    }
-                    for item in data
-                ]
-                sorted_c = sanitize_and_sort_candles(candles)
-                if sorted_c:
-                    _CACHE[cache_key] = (now, sorted_c)
-                    return sorted_c
-        except Exception as e:
-            logger.warning("Binance fetch failed for %s: %s", symbol, e)
+            b_sym = spec.get("providerSymbol", "BTCUSDT")
+            for host in ["api.binance.com", "api.binance.us"]:
+                try:
+                    url = f"https://{host}/api/v3/klines?symbol={b_sym}&interval={b_interval}&limit={min(limit + 1, 500)}"
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=3.5) as resp:
+                        data = json.loads(resp.read().decode())
+                        candles = [
+                            {
+                                "timestamp": datetime.fromtimestamp(item[0] / 1000.0, tz=timezone.utc).isoformat(),
+                                "open": float(item[1]),
+                                "high": float(item[2]),
+                                "low": float(item[3]),
+                                "close": float(item[4]),
+                                "volume": float(item[5]),
+                            }
+                            for item in data
+                        ]
+                        sorted_c = sanitize_and_sort_candles(candles)
+                        if sorted_c:
+                            _CACHE[cache_key] = (now, sorted_c)
+                            return sorted_c
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
-    # 2. Twelve Data for Forex / Commodities
+        # Try Yahoo Finance for Crypto
+        yf_candles = _fetch_yahoo_finance(spec["symbol"], interval, limit)
+        if yf_candles:
+            sorted_c = sanitize_and_sort_candles(yf_candles)
+            if sorted_c:
+                _CACHE[cache_key] = (now, sorted_c)
+                return sorted_c
+
+    # B. If Forex or Commodities: Try Yahoo Finance -> Twelve Data
+    yf_candles = _fetch_yahoo_finance(spec["symbol"], interval, limit)
+    if yf_candles:
+        sorted_c = sanitize_and_sort_candles(yf_candles)
+        if sorted_c:
+            _CACHE[cache_key] = (now, sorted_c)
+            return sorted_c
+
+    # Fallback to Twelve Data
     api_key = os.getenv("TWELVE_DATA_API_KEY", "2722ed98484d448f912b7019c92676ae")
     provider_sym = spec.get("providerSymbol", spec["symbol"])
     if api_key and api_key != "your_key_here":
         try:
             url = f"https://api.twelvedata.com/time_series?symbol={provider_sym}&interval={interval}&outputsize={min(limit + 1, 500)}&format=JSON&apikey={api_key}"
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=4.5) as resp:
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
                 body = json.loads(resp.read().decode())
                 values = body.get("values", [])
                 if values and isinstance(values, list):

@@ -350,6 +350,105 @@ export const marketDataService = {
       return cached;
     }
 
+    // Provider 0: Yahoo Finance (Keyless, Unthrottled Real-time Forex, Commodities, and Crypto)
+    const yahooSymMap: Record<string, string> = {
+      'EUR/USD': 'EURUSD=X',
+      'GBP/USD': 'GBPUSD=X',
+      'USD/JPY': 'USDJPY=X',
+      'AUD/USD': 'AUDUSD=X',
+      'USD/CAD': 'USDCAD=X',
+      'NZD/USD': 'NZDUSD=X',
+      'EUR/GBP': 'EURGBP=X',
+      'GBP/JPY': 'GBPJPY=X',
+      'EUR/CAD': 'EURCAD=X',
+      'AUD/CAD': 'AUDCAD=X',
+      'Gold': 'GC=F',
+      'XAU/USD': 'GC=F',
+      'BTC/USD': 'BTC-USD',
+      'ETH/USD': 'ETH-USD',
+      'SOL/USD': 'SOL-USD',
+    };
+
+    const yfSymbol = yahooSymMap[spec.symbol] || yahooSymMap[spec.providerSymbol || ''];
+    if (yfSymbol) {
+      try {
+        const yInterval = interval === '1min' ? '1m' : interval === '5min' ? '5m' : '15m';
+        const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${yfSymbol}`, {
+          params: { interval: yInterval, range: '1d' },
+          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
+          timeout: 4500,
+        });
+
+        const result = res.data?.chart?.result?.[0];
+        if (result && Array.isArray(result.timestamp)) {
+          const timestamps: number[] = result.timestamp;
+          const quotes = result.indicators?.quote?.[0];
+          if (quotes) {
+            const rawCandles: OHLCCandle[] = [];
+            for (let i = 0; i < timestamps.length; i++) {
+              const o = quotes.open?.[i];
+              const h = quotes.high?.[i];
+              const l = quotes.low?.[i];
+              const c = quotes.close?.[i];
+              const v = quotes.volume?.[i] || 0;
+              if (o != null && h != null && l != null && c != null) {
+                rawCandles.push({
+                  timestamp: new Date(timestamps[i] * 1000).toISOString(),
+                  open: Number(o),
+                  high: Number(h),
+                  low: Number(l),
+                  close: Number(c),
+                  volume: Number(v),
+                });
+              }
+            }
+            const sorted = this.sanitizeAndSortCandles(rawCandles);
+            if (sorted.length >= 10) {
+              cacheService.set(cacheKey, sorted, 8);
+              return sorted;
+            }
+          }
+        }
+      } catch (err) {
+        // Fallback to next provider
+      }
+    }
+
+    // Provider 1: Coinbase Exchange (Keyless Crypto)
+    if (spec.category === 'Crypto') {
+      const cbProductMap: Record<string, string> = {
+        'BTC/USD': 'BTC-USD',
+        'ETH/USD': 'ETH-USD',
+        'SOL/USD': 'SOL-USD',
+      };
+      const cbProduct = cbProductMap[spec.symbol] || (spec.providerSymbol ? spec.providerSymbol.replace('USDT', '-USD') : null);
+      if (cbProduct) {
+        try {
+          const gran = interval === '1min' ? 60 : interval === '5min' ? 300 : 900;
+          const res = await axios.get(`https://api.exchange.coinbase.com/products/${cbProduct}/candles`, {
+            params: { granularity: gran },
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 4500,
+          });
+          if (Array.isArray(res.data) && res.data.length > 0) {
+            const rawCandles: OHLCCandle[] = res.data.map((item: any[]) => ({
+              timestamp: new Date(item[0] * 1000).toISOString(),
+              open: parseFloat(item[3]),
+              high: parseFloat(item[2]),
+              low: parseFloat(item[1]),
+              close: parseFloat(item[4]),
+              volume: parseFloat(item[5] || '0'),
+            }));
+            const sorted = this.sanitizeAndSortCandles(rawCandles);
+            if (sorted.length >= 10) {
+              cacheService.set(cacheKey, sorted, 8);
+              return sorted;
+            }
+          }
+        } catch {}
+      }
+    }
+
     // Provider 1: Binance Public API for Cryptocurrencies (Zero Key Required, High Reliability)
     if (spec.provider === 'binance' && spec.providerSymbol) {
       try {
