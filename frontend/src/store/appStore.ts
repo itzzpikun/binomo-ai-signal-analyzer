@@ -30,14 +30,14 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   // Initial state
-  selectedSymbol: 'Crypto IDX',
-  selectedInterval: '1min',
-  currentPrice: 6245.50,
+  selectedSymbol: 'EUR/USD',
+  selectedInterval: '5min',
+  currentPrice: null,
   candles: [],
   dataAvailable: true,
   currentSignal: null,
   isAnalyzing: false,
-  connectionStatus: 'connected',
+  connectionStatus: 'disconnected',
 
   // Actions
   setSelectedSymbol: (symbol) =>

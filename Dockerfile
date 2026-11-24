@@ -1,31 +1,37 @@
-# Single-service Dockerfile: Python Flask serves frontend + API
-FROM node:20-bookworm-slim AS frontend-builder
+FROM node:20-bookworm-slim
 
-WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --no-audit --no-fund
-COPY frontend/ ./
-RUN npm run build
-
-# ── Python runtime ──
-FROM python:3.11-slim
+# Install Python 3 and venv
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
-COPY ai-engine/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy all project files
+COPY . .
 
-# Copy Python application code
-COPY ai-engine/ ./
+# Setup Python AI Engine in virtual environment
+RUN python3 -m venv /app/ai-engine/venv && \
+    /app/ai-engine/venv/bin/pip install --no-cache-dir -r /app/ai-engine/requirements.txt
 
-# Copy built frontend into static/
-COPY --from=frontend-builder /build/dist/ ./static/
+# Install frontend dependencies and build production static files
+RUN cd /app/frontend && npm install && npm run build
 
-# Environment
-ENV PORT=10000
+# Install backend dependencies and build TypeScript server
+RUN cd /app/backend && npm install && npm run build
 
-EXPOSE 10000
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=5001
+ENV AI_ENGINE_URL=http://127.0.0.1:8000
+ENV TWELVE_DATA_API_KEY=2722ed98484d448f912b7019c92676ae
+ENV GEMINI_API_KEY=""
+ENV OPENAI_API_KEY=""
 
-# Start with gunicorn for production reliability
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 2 --timeout 120 --access-logfile - app:app"]
+EXPOSE 5001
+
+# Start Python AI Engine on 8000 and Express Backend (which serves Frontend & API) on 5001
+CMD ["sh", "-c", "/app/ai-engine/venv/bin/python3 /app/ai-engine/app.py & cd /app/backend && npm start"]

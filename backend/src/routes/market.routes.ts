@@ -17,7 +17,13 @@ const VALID_INTERVALS = ['1min', '5min', '15min'];
 router.get(
   '/candles',
   [
-    query('symbol').optional().isString().trim(),
+    query('symbol')
+      .optional()
+      .isString()
+      .trim()
+      .toUpperCase()
+      .isIn(VALID_SYMBOLS)
+      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
     query('interval')
       .optional()
       .isString()
@@ -38,7 +44,13 @@ router.get('/assets', marketController.getAssets.bind(marketController));
 router.get(
   '/price',
   [
-    query('symbol').notEmpty().isString().trim(),
+    query('symbol')
+      .notEmpty()
+      .isString()
+      .trim()
+      .toUpperCase()
+      .isIn(VALID_SYMBOLS)
+      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
   ],
   marketController.getPrice.bind(marketController)
 );

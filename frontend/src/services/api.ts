@@ -21,23 +21,6 @@ const apiClient = axios.create({
   },
 });
 
-// Request interceptor: Automatically attach stored AI provider keys
-apiClient.interceptors.request.use((config) => {
-  try {
-    const rawKeys = localStorage.getItem('binomo_ai_keys');
-    if (rawKeys) {
-      const keys = JSON.parse(rawKeys);
-      if (keys.geminiKey) config.headers['x-gemini-key'] = keys.geminiKey;
-      if (keys.openaiKey) config.headers['x-openai-key'] = keys.openaiKey;
-      if (keys.groqKey) config.headers['x-groq-key'] = keys.groqKey;
-      if (keys.deepseekKey) config.headers['x-deepseek-key'] = keys.deepseekKey;
-      if (keys.openrouterKey) config.headers['x-openrouter-key'] = keys.openrouterKey;
-      if (keys.cloudflareKey) config.headers['x-cloudflare-key'] = keys.cloudflareKey;
-    }
-  } catch {}
-  return config;
-});
-
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => response,
@@ -169,7 +152,6 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     trade_quality: sig.trade_quality,
     entry_timing: sig.entry_timing,
     confluence_score: sig.confluence_score,
-    next_probable_setup: sig.next_probable_setup || data.next_probable_setup,
     gemini_arbiter: sig.gemini_arbiter,
   };
 };
@@ -196,44 +178,6 @@ export const verifySignal = async (
 };
 
 // ----------------------------------------------------------------
-// Multi-Asset Background Scanner
-// ----------------------------------------------------------------
-
-export interface MultiAssetSignal {
-  symbol: string;
-  direction: 'CALL' | 'PUT';
-  confidence: number;
-  trade_quality: string;
-  timeframes?: {
-    '1m': string;
-    '5m': string;
-    '15m': string;
-  };
-  entry_timing: any;
-  next_probable_setup?: any;
-  reasons?: {
-    bullish: string[];
-    bearish: string[];
-  };
-  timestamp: string;
-}
-
-export interface MultiAssetScanResponse {
-  status: string;
-  scanned: number;
-  active_signals: number;
-  signals: MultiAssetSignal[];
-  timestamp: string;
-}
-
-export const scanAllAssets = async (interval = '1min'): Promise<MultiAssetScanResponse> => {
-  const response = await apiClient.get('/api/scan/all', {
-    params: { interval },
-  });
-  return response.data;
-};
-
-// ----------------------------------------------------------------
 // Backtesting
 // ----------------------------------------------------------------
 
@@ -248,16 +192,6 @@ export const runBacktest = async (params: BacktestParams): Promise<BacktestResul
 
 export const getPerformance = async (): Promise<PerformanceSummary> => {
   const response = await apiClient.get('/api/performance/summary');
-  return response.data;
-};
-
-export const testAIKey = async (provider: string, apiKey: string) => {
-  const response = await apiClient.post('/api/ai/test-key', { provider, apiKey });
-  return response.data;
-};
-
-export const getAIProviders = async () => {
-  const response = await apiClient.get('/api/ai/providers');
   return response.data;
 };
 
@@ -277,11 +211,8 @@ export const api = {
     getSignalHistory(symbol, limit).then(r => r.signals ?? r),
   verifySignal: (signalId: string, outcome: 'WIN' | 'LOSS') =>
     verifySignal(signalId, outcome),
-  scanAllAssets: (interval = '1min') => scanAllAssets(interval),
   runBacktest: (params: BacktestParams) => runBacktest(params),
   getPerformance: () => getPerformance(),
-  testAIKey: (provider: string, apiKey: string) => testAIKey(provider, apiKey),
-  getAIProviders: () => getAIProviders(),
 };
 
 export default apiClient;

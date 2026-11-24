@@ -6,15 +6,15 @@ import type { Candle } from '../../types';
 import TradingViewWidget from './TradingViewWidget';
 
 const CHART_COLORS = {
-  background: '#12151e',
+  background: '#0a0f1d',
   text: '#94a3b8',
-  grid: '#1c202e',
-  border: '#272d40',
-  up: '#00b15d',
-  down: '#ff3355',
+  grid: '#1e293b',
+  border: '#334155',
+  up: '#10b981',
+  down: '#ef4444',
   ema9: '#38bdf8',
   ema21: '#f59e0b',
-  crosshair: '#f7a600',
+  crosshair: '#64748b',
 };
 
 function calculateEMA(data: number[], period: number): (number | null)[] {
@@ -46,8 +46,8 @@ const CandlestickChart: React.FC = () => {
   const selectedSymbol = useAppStore((s) => s.selectedSymbol);
   const selectedInterval = useAppStore((s) => s.selectedInterval);
 
-  // Active chart engine: Binomo Live Candles vs TradingView (defaults to Binomo!)
-  const [chartMode, setChartMode] = useState<'binomo' | 'tradingview'>('binomo');
+  // Active chart engine: TradingView Live View vs AI Pro Chart
+  const [chartMode, setChartMode] = useState<'tradingview' | 'ai'>('tradingview');
 
   // Live hover candle details
   const [hoverData, setHoverData] = useState<{
@@ -133,7 +133,7 @@ const CandlestickChart: React.FC = () => {
         secondsVisible: false,
       },
       width: containerRef.current.clientWidth || 600,
-      height: Math.max(containerRef.current.clientHeight || 0, 520),
+      height: Math.max(containerRef.current.clientHeight || 0, 380),
     });
 
     chartRef.current = chart;
@@ -292,32 +292,31 @@ const CandlestickChart: React.FC = () => {
           {/* Chart View Mode Switcher */}
           <div className="flex items-center gap-1 bg-gray-950 border border-gray-800 p-0.5 rounded-lg">
             <button
-              onClick={() => setChartMode('binomo')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 ${
-                chartMode === 'binomo'
-                  ? 'bg-yellow-500 text-black shadow-sm'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <span>🟡 Binomo Live Candles</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            </button>
-            <button
               onClick={() => setChartMode('tradingview')}
-              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all ${
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
                 chartMode === 'tradingview'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              📈 TradingView
+              📈 TradingView Live
+            </button>
+            <button
+              onClick={() => setChartMode('ai')}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                chartMode === 'ai'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              📊 AI Pro Chart
             </button>
           </div>
 
           {/* Live Pulsing Dot */}
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
             <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
-            <span className="text-[10px] sm:text-[11px] font-medium text-emerald-400">BINOMO FEED</span>
+            <span className="text-[10px] sm:text-[11px] font-medium text-emerald-400">LIVE FEED</span>
           </div>
 
           {/* Price Change */}
@@ -349,7 +348,7 @@ const CandlestickChart: React.FC = () => {
           </div>
 
           {/* EMA Indicators Legend */}
-          {chartMode === 'binomo' && (
+          {chartMode === 'ai' && (
             <div className="flex items-center gap-2 sm:gap-3 text-xs hidden sm:flex">
               <span className="flex items-center gap-1.5">
                 <span className="w-4 h-0.5 bg-sky-400 inline-block rounded-full"></span>
@@ -365,7 +364,7 @@ const CandlestickChart: React.FC = () => {
       </div>
 
       {chartMode === 'tradingview' ? (
-        <div className="flex-1 w-full min-h-[460px] sm:min-h-[560px] lg:min-h-[620px] p-1">
+        <div className="flex-1 w-full min-h-[380px] sm:min-h-[440px] p-1">
           <TradingViewWidget symbol={selectedSymbol} interval={selectedInterval} />
         </div>
       ) : (
@@ -400,7 +399,7 @@ const CandlestickChart: React.FC = () => {
           </div>
 
           {/* Lightweight Charts Canvas */}
-          <div ref={containerRef} className="flex-1 w-full min-h-[460px] sm:min-h-[560px] lg:min-h-[620px]" />
+          <div ref={containerRef} className="flex-1 w-full min-h-[380px] sm:min-h-[440px]" />
         </>
       )}
     </div>

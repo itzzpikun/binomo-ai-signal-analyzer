@@ -1,20 +1,17 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
-import { api, type MultiAssetSignal } from '../services/api';
+import { api } from '../services/api';
 import CandlestickChart from '../components/charts/CandlestickChart';
 import SignalCard from '../components/signal/SignalCard';
 import IndicatorPanel from '../components/signal/IndicatorPanel';
 import ReasonsList from '../components/signal/ReasonsList';
-import { BinomoTradePanel } from '../components/signal/BinomoTradePanel';
 import AssetSelector from '../components/market/AssetSelector';
 import TimeframeSelector from '../components/market/TimeframeSelector';
 import PriceTicker from '../components/market/PriceTicker';
 import StatusBadge from '../components/common/StatusBadge';
 import RiskWarning from '../components/common/RiskWarning';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import SignalNotificationBanner from '../components/common/SignalNotificationBanner';
-import TradeTimingCountdown from '../components/signal/TradeTimingCountdown';
-import type { Candle, Signal } from '../types';
+import type { Candle } from '../types';
 
 const Dashboard: React.FC = () => {
   const {
@@ -31,10 +28,8 @@ const Dashboard: React.FC = () => {
     setCurrentSignal,
     setIsAnalyzing,
     setConnectionStatus,
-    setSelectedSymbol,
   } = useAppStore();
 
-  const [multiAssetSignals, setMultiAssetSignals] = useState<MultiAssetSignal[]>([]);
   const [showChartOnMobile, setShowChartOnMobile] = useState(true);
 
   // Interval in seconds: 1min = 60s, 5min = 300s, 15min = 900s
@@ -48,14 +43,6 @@ const Dashboard: React.FC = () => {
 
   const isMountedRef = useRef(true);
   const isAnalyzingRef = useRef(false);
-  const activeSignalRef = useRef<Signal | null>(null);
-  const currentSlotRef = useRef<number>(0);
-
-  // Reset lock when symbol or interval changes
-  useEffect(() => {
-    activeSignalRef.current = null;
-    currentSlotRef.current = 0;
-  }, [selectedSymbol, selectedInterval]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -63,10 +50,10 @@ const Dashboard: React.FC = () => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Analyze signal using the latest candle data with Candle-Slot Locking
+  // Analyze signal using the latest candle data
   const analyzeSignal = useCallback(
     async (candlesToAnalyze: Candle[]) => {
-      if (!candlesToAnalyze || candlesToAnalyze.length < 3) return;
+      if (!candlesToAnalyze || candlesToAnalyze.length < 10) return;
       if (isAnalyzingRef.current) return;
 
       isAnalyzingRef.current = true;
@@ -78,77 +65,10 @@ const Dashboard: React.FC = () => {
           candlesToAnalyze
         );
         if (result && isMountedRef.current) {
-          const now = Date.now();
-          const slot = Math.floor(now / 1000 / intervalSeconds) * intervalSeconds;
-
-          // Candle-Slot Locking: Once decided for this candle slot, keep the direction locked
-          if (activeSignalRef.current && currentSlotRef.current === slot) {
-            const lockedDirection = activeSignalRef.current.direction;
-            const updated: Signal = {
-              ...result,
-              direction: lockedDirection,
-              confidence: Math.max(result.confidence, activeSignalRef.current.confidence),
-              trade_quality: activeSignalRef.current.trade_quality || result.trade_quality,
-            };
-            activeSignalRef.current = updated;
-            setCurrentSignal(updated);
-          } else {
-            // New candle slot: adopt and lock in the fresh signal!
-            currentSlotRef.current = slot;
-            activeSignalRef.current = result;
-            setCurrentSignal(result);
-          }
+          setCurrentSignal(result);
         }
       } catch (err) {
         console.error('[Auto Signal Error]:', err);
-        // Fallback: If backend is momentarily reconnecting, generate client-side signal instantly
-        if (isMountedRef.current && candlesToAnalyze.length >= 3 && !activeSignalRef.current) {
-          const closes = candlesToAnalyze.map((c) => c.close);
-          const lastClose = closes[closes.length - 1];
-          const prevClose = closes[closes.length - 2] || lastClose;
-          const isUp = lastClose >= prevClose;
-          const fallbackDirection = isUp ? 'CALL' : 'PUT';
-
-          const fallbackSignal: Signal = {
-            id: 'client_fallback_' + Date.now(),
-            symbol: selectedSymbol,
-            interval: selectedInterval,
-            timestamp: new Date().toISOString(),
-            direction: fallbackDirection,
-            confidence: 82,
-            trade_quality: 'A HIGH CONFLUENCE',
-            confluence_score: 80,
-            next_probable_setup: {
-              bias: fallbackDirection,
-              biasPercentage: 82,
-              bullishPower: isUp ? 75 : 25,
-              bearishPower: isUp ? 25 : 75,
-              watchTrigger: `Candle momentum aligned with ${fallbackDirection}. Execute within 15s window.`,
-              setupSummary: `${fallbackDirection} signal generated from live candle confluence.`,
-            },
-            entry_timing: {
-              rule_en: 'Enter trade at the OPEN of the NEXT candle within first 15 seconds.',
-              rule_hi: 'Agli candle ke open hote hi pehle 15 seconds me trade lein.',
-              recommended_action: `Execute ${fallbackDirection} on Binomo within next 15s.`,
-              entry_window: 'First 15 seconds of candle open',
-              expiry_duration: '5 Minutes',
-              confluence_count: 5,
-              quality_tier: 'A HIGH CONFLUENCE',
-              quality_label: `${fallbackDirection} Confluence Established`,
-            },
-            indicators: {
-              rsi: { value: isUp ? 56.4 : 43.2, signal: isUp ? 'bullish_momentum' : 'bearish_momentum' },
-              macd: { macd: isUp ? 0.002 : -0.002, signal_line: 0, histogram: isUp ? 0.001 : -0.001, crossover: isUp ? 'bullish' : 'bearish' },
-              ema: { trend: isUp ? 'bullish' : 'bearish' },
-            },
-            reasons: {
-              bullish: isUp ? ['Live candle price momentum positive', 'EMA dynamic support test'] : [],
-              bearish: !isUp ? ['Live candle price momentum negative', 'EMA dynamic resistance rejection'] : [],
-            },
-          };
-          activeSignalRef.current = fallbackSignal;
-          setCurrentSignal(fallbackSignal);
-        }
       } finally {
         isAnalyzingRef.current = false;
         if (isMountedRef.current) {
@@ -156,7 +76,7 @@ const Dashboard: React.FC = () => {
         }
       }
     },
-    [selectedSymbol, selectedInterval, intervalSeconds, setIsAnalyzing, setCurrentSignal]
+    [selectedSymbol, selectedInterval, setIsAnalyzing, setCurrentSignal]
   );
 
   // Fetch candles & current price, then immediately analyze signal
@@ -210,7 +130,7 @@ const Dashboard: React.FC = () => {
         setDataAvailable(true);
         setConnectionStatus('connected');
 
-        // Immediately analyze signal with full engine!
+        // Immediately analyze signal without any delay!
         analyzeSignal(mapped);
       } else {
         setDataAvailable(false);
@@ -257,28 +177,6 @@ const Dashboard: React.FC = () => {
     };
   }, [fetchMarketDataAndAnalyze]);
 
-  // Background Multi-Asset Scanner: Scans all 26 Binomo markets every 15s
-  useEffect(() => {
-    let isMounted = true;
-    const runScan = async () => {
-      try {
-        const res = await api.scanAllAssets(selectedInterval);
-        if (isMounted && res && Array.isArray(res.signals)) {
-          setMultiAssetSignals(res.signals);
-        }
-      } catch {
-        // scan error handled silently
-      }
-    };
-
-    runScan();
-    const scanInterval = setInterval(runScan, 15_000);
-    return () => {
-      isMounted = false;
-      clearInterval(scanInterval);
-    };
-  }, [selectedInterval]);
-
   // Candle close countdown clock (updates every 1s)
   useEffect(() => {
     const timer = setInterval(() => {
@@ -295,13 +193,6 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full gap-2.5 sm:gap-4 p-2 sm:p-4 max-w-7xl mx-auto w-full">
-      {/* High-visibility Live Signal Notification Banner with Instant Trade Button & Sound across ALL markets */}
-      <SignalNotificationBanner
-        currentSignal={currentSignal}
-        multiSignals={multiAssetSignals}
-        onSelectAsset={(symbol) => setSelectedSymbol(symbol)}
-      />
-
       {/* Top bar — Mobile Optimized & Compact */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-gray-900/60 p-2 sm:p-3 rounded-xl border border-gray-800">
         <div className="flex items-center gap-2 flex-wrap">
@@ -351,14 +242,6 @@ const Dashboard: React.FC = () => {
 
       <RiskWarning />
 
-      {/* Live Binomo Trade Entry Countdown & Timing Action Panel */}
-      {dataAvailable && (
-        <TradeTimingCountdown
-          interval={selectedInterval}
-          currentSignal={currentSignal}
-        />
-      )}
-
       {/* DATA UNAVAILABLE banner */}
       {!dataAvailable && (
         <div className="flex flex-col items-center justify-center h-64 gap-3 bg-gray-900 border border-yellow-800 rounded-xl p-4 text-center">
@@ -376,16 +259,16 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Main grid — Enlarged Chart & Balanced Signal Panel */}
+      {/* Main grid */}
       {dataAvailable && (
         <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 flex-1 min-h-0">
-          {/* Chart — Substantially Enlarged & Responsive */}
+          {/* Chart — Responsive & Collapsible on Mobile */}
           {showChartOnMobile && (
-            <div className="w-full lg:w-[63%] min-h-[460px] sm:min-h-[560px] lg:min-h-[620px] flex flex-col">
+            <div className="w-full lg:w-3/5 min-h-[220px] sm:min-h-[380px] flex flex-col">
               {candles.length > 0 ? (
                 <CandlestickChart />
               ) : (
-                <div className="bg-gray-900 border border-gray-800 rounded-xl flex-1 flex items-center justify-center p-6 min-h-[460px]">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl flex-1 flex items-center justify-center p-6 min-h-[220px]">
                   <div className="flex flex-col items-center gap-3">
                     <LoadingSpinner />
                     <p className="text-gray-500 text-xs sm:text-sm">Loading market candles…</p>
@@ -395,15 +278,9 @@ const Dashboard: React.FC = () => {
             </div>
           )}
 
-          {/* Signal panel — Optimized & Responsive */}
-          <div className="w-full lg:w-[37%] flex flex-col gap-2.5 sm:gap-3">
+          {/* Signal panel — 40% Desktop / Full on Mobile */}
+          <div className="w-full lg:w-2/5 flex flex-col gap-2.5 sm:gap-3">
             <SignalCard signal={currentSignal} isAnalyzing={isAnalyzing} />
-
-            {/* Binomo Live Execution Order Panel */}
-            <BinomoTradePanel
-              direction={currentSignal?.direction}
-              confidence={currentSignal?.confidence}
-            />
 
             {/* Background auto-analyzing subtle status indicator */}
             {isAnalyzing && currentSignal && (

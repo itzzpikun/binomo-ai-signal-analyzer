@@ -369,9 +369,6 @@ def generate_signal(
     candles: list[dict],
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    groq_api_key: Optional[str] = None,
-    openrouter_api_key: Optional[str] = None,
-    cloudflare_api_key: Optional[str] = None,
 ) -> dict:
     """
     Main signal generation function with Binomo Strategy Guide Confluence Matrix.
@@ -538,166 +535,90 @@ def generate_signal(
     else:
         pa_momentum = 0
 
-    # ── 100-POINT QUANTITATIVE SCORING ENGINE ─────────────────────────────────
-    # Trend (25 pts)
-    bull_trend = (12 if ema9 > ema21 and ema21 > ema50 else 8 if ema9 > ema21 else 0) + (8 if close > ema50 else 0) + (5 if macd_dict["macd"] > 0 else 0)
-    bear_trend = (12 if ema9 < ema21 and ema21 < ema50 else 8 if ema9 < ema21 else 0) + (8 if close < ema50 else 0) + (5 if macd_dict["macd"] < 0 else 0)
-
-    # Momentum (20 pts)
-    bull_mom = (7 if 50 <= rsi_val <= 68 else 4 if 68 < rsi_val <= 75 else 0) + (6 if macd_dict["histogram"] > 0 else 0) + (7 if stoch_score > 0.4 else 0)
-    bear_mom = (7 if 32 <= rsi_val <= 50 else 4 if 25 <= rsi_val < 32 else 0) + (6 if macd_dict["histogram"] < 0 else 0) + (7 if stoch_score < -0.4 else 0)
-
-    # Price Action (20 pts)
-    bull_pa = (8 if closes[-1] > closes[-2] and highs[-1] > highs[-2] else 0) + (7 if pattern_score > 0.4 else 0) + (5 if sr_pos == "at_support" else 2)
-    bear_pa = (8 if closes[-1] < closes[-2] and lows[-1] < lows[-2] else 0) + (7 if pattern_score < -0.4 else 0) + (5 if sr_pos == "at_resistance" else 2)
-
-    # Strategies / Confluence (20 pts)
-    bull_strat = (10 if s1_up else 0) + (5 if s2_up else 0) + (5 if s3_up else 0)
-    bear_strat = (10 if s1_down else 0) + (5 if s2_down else 0) + (5 if s3_down else 0)
-
-    # Volatility / Market Quality (15 pts)
-    adx_val = adx_dict.get("adx", 20)
-    bb_width_pct = bb["width"] / max(bb["middle"], 1e-6)
-    vol_score = (8 if adx_val >= 22 else 4 if adx_val >= 18 else 0) + (4 if 0.0015 <= bb_width_pct <= 0.015 else 2) + (3 if not is_dead_market else 0)
-
-    bull_total = min(100, bull_trend + bull_mom + bull_pa + bull_strat + vol_score)
-    bear_total = min(100, bear_trend + bear_mom + bear_pa + bear_strat + vol_score)
-
-    dominant_bias = "CALL" if bull_total >= bear_total else "PUT"
-    dominant_score = bull_total if dominant_bias == "CALL" else bear_total
-
-    # ── ANTI-LOSS FILTERS (Strict Veto to WAIT) ───────────────────────────────
-    filter_triggered = False
-    filter_reason = None
-
-    last_range = max(highs[-1] - lows[-1], 1e-6)
-    last_body = abs(closes[-1] - candles[-1].get("open", closes[-1]))
-    last_body_ratio = last_body / last_range
-    last_upper_wick = highs[-1] - max(closes[-1], candles[-1].get("open", closes[-1]))
-    last_lower_wick = min(closes[-1], candles[-1].get("open", closes[-1])) - lows[-1]
-
-    bb_pct_b = bb.get("percent_b", 0.5)
-    bb_upper = bb.get("upper", float("inf"))
-    bb_lower = bb.get("lower", float("-inf"))
-    macro_trend = macro_trend_dict.get("trend", "NEUTRAL")
-
-    # Filter 1: Dead Market / Sideways Chop / Balanced Contradiction
+    # ── ULTRA-STRICT DECISION MATRIX (High Precision) ─────────────────────────
     if is_dead_market:
-        filter_triggered = True
-        filter_reason = "Low Volatility Dead Market (ATR too low) — Risk High"
-        all_bear_reasons.append(filter_reason)
-    elif adx_val < 22:
-        filter_triggered = True
-        filter_reason = f"Sideways Market Chop Detected (ADX: {adx_val:.1f} < 22) — False Signal Risk High"
-        all_bear_reasons.append("⚠️ Sideways consolidation chop: ADX < 22")
-    elif has_strong_conflict and abs(bull_confirmations - bear_confirmations) <= 1:
-        filter_triggered = True
-        filter_reason = f"Contradictory Market Signals Detected ({bull_confirmations} Bulls vs {bear_confirmations} Bears) — WAIT"
-        all_bear_reasons.append(filter_reason)
-
-    # Filter 2: Anti-Trend Veto (Never trade counter to prevailing EMA trend)
-    elif dominant_bias == "CALL" and (ema9 < ema21 and close < ema50) and not divergence_dict.get("bullish_divergence"):
-        filter_triggered = True
-        filter_reason = "Anti-Trend Filter: Cannot CALL in strong downtrend (EMA 9 < 21 & Price < EMA 50)"
-        all_bear_reasons.append(filter_reason)
-
-    elif dominant_bias == "PUT" and (ema9 > ema21 and close > ema50) and not divergence_dict.get("bearish_divergence"):
-        filter_triggered = True
-        filter_reason = "Anti-Trend Filter: Cannot PUT in strong uptrend (EMA 9 > 21 & Price > EMA 50)"
-        all_bull_reasons.append(filter_reason)
-
-    # Filter 3: Macro Higher-Timeframe Trend Veto (Price vs EMA 50 & 200)
-    elif dominant_bias == "CALL" and macro_trend in ("STRONG_BEARISH", "MILD_BEARISH") and not divergence_dict.get("bullish_divergence"):
-        filter_triggered = True
-        filter_reason = f"Macro Trend Veto: Prevailing trend is Bearish ({macro_trend}) — Counter-trend CALL blocked"
-        all_bear_reasons.append(filter_reason)
-
-    elif dominant_bias == "PUT" and macro_trend in ("STRONG_BULLISH", "MILD_BULLISH") and not divergence_dict.get("bearish_divergence"):
-        filter_triggered = True
-        filter_reason = f"Macro Trend Veto: Prevailing trend is Bullish ({macro_trend}) — Counter-trend PUT blocked"
-        all_bull_reasons.append(filter_reason)
-
-    # Filter 4: Bollinger Band Overbought/Oversold Reversal Traps
-    elif dominant_bias == "CALL" and (close >= bb_upper * 0.9995 or (not math.isnan(bb_pct_b) and bb_pct_b >= 0.95)):
-        filter_triggered = True
-        filter_reason = f"Bollinger Band Overbought Exhaustion (%B={bb_pct_b:.2f} >= 0.95) — Sharp Reversal Trap Risk High"
-        all_bear_reasons.append(filter_reason)
-
-    elif dominant_bias == "PUT" and (close <= bb_lower * 1.0005 or (not math.isnan(bb_pct_b) and bb_pct_b <= 0.05)):
-        filter_triggered = True
-        filter_reason = f"Bollinger Band Oversold Exhaustion (%B={bb_pct_b:.2f} <= 0.05) — Sharp Bounce Trap Risk High"
-        all_bull_reasons.append(filter_reason)
-
-    # Filter 5: RSI Momentum Over-Extension
-    elif dominant_bias == "CALL" and rsi_val > 66.0:
-        filter_triggered = True
-        filter_reason = f"RSI Overbought Momentum Exhaustion (RSI: {rsi_val:.1f} > 66) — Pullback Risk High"
-        all_bear_reasons.append(filter_reason)
-
-    elif dominant_bias == "PUT" and rsi_val < 34.0:
-        filter_triggered = True
-        filter_reason = f"RSI Oversold Momentum Exhaustion (RSI: {rsi_val:.1f} < 34) — Bounce Risk High"
-        all_bull_reasons.append(filter_reason)
-
-    # Filter 6: Indecisive Candle Body (Doji / Spinning Top / Weak Momentum)
-    elif last_body_ratio < 0.45:
-        filter_triggered = True
-        filter_reason = f"Indecisive Candle Body (Body is only {last_body_ratio*100:.0f}% < 45% of Range) — High Directional Uncertainty"
-        if dominant_bias == "CALL":
-            all_bear_reasons.append(filter_reason)
-        else:
-            all_bull_reasons.append(filter_reason)
-
-    # Filter 7: Universal Rejection Wick Filter (Upper wick kills CALL, Lower wick kills PUT)
-    elif dominant_bias == "CALL" and (last_upper_wick >= 0.38 * last_range or last_upper_wick >= 0.85 * max(last_body, 1e-6)):
-        filter_triggered = True
-        filter_reason = f"Selling Pressure Wick Rejection: Upper Wick ({last_upper_wick/last_range*100:.0f}% of candle) contradicts CALL"
-        all_bear_reasons.append(filter_reason)
-
-    elif dominant_bias == "PUT" and (last_lower_wick >= 0.38 * last_range or last_lower_wick >= 0.85 * max(last_body, 1e-6)):
-        filter_triggered = True
-        filter_reason = f"Buying Pressure Wick Rejection: Lower Wick ({last_lower_wick/last_range*100:.0f}% of candle) contradicts PUT"
-        all_bull_reasons.append(filter_reason)
-
-    # Filter 8: Consecutive Candle Run Exhaustion
-    elif exhaustion_dict.get("exhaustion_risk") and dominant_bias == "CALL" and exhaustion_dict.get("run_direction") == "GREEN":
-        filter_triggered = True
-        filter_reason = f"Candle Exhaustion: {exhaustion_dict.get('run_count', 4)}+ consecutive green candles. Retracement risk high. WAIT."
-        all_bear_reasons.append(filter_reason)
-
-    elif exhaustion_dict.get("exhaustion_risk") and dominant_bias == "PUT" and exhaustion_dict.get("run_direction") == "RED":
-        filter_triggered = True
-        filter_reason = f"Candle Exhaustion: {exhaustion_dict.get('run_count', 4)}+ consecutive red candles. Bounce risk high. WAIT."
-        all_bull_reasons.append(filter_reason)
-
-    # Filter 9: Strict 65%+ Institutional Quantitative Threshold & Min 4 Confirmations
-    elif dominant_score < 65 or (dominant_bias == "CALL" and bull_confirmations < 4) or (dominant_bias == "PUT" and bear_confirmations < 4):
-        filter_triggered = True
-        req_conf = bull_confirmations if dominant_bias == "CALL" else bear_confirmations
-        filter_reason = f"Setup Score ({dominant_score}/100) or Confluence ({req_conf}/10) below high-accuracy threshold (Min 65 pts, 4 confluences)"
-        if dominant_bias == "CALL":
-            all_bear_reasons.append(filter_reason)
-        else:
-            all_bull_reasons.append(filter_reason)
-
-    # ── DECISION OUTCOME ───────────────────────────────────────────────────────
-    confluence_count = max(bull_confirmations, bear_confirmations)
-
-    if filter_triggered:
         direction = "WAIT"
-        trade_quality = filter_reason or "AWAITING 65+ SCORE CONFLUENCE"
-        quality_label = f"Trade Paused: {trade_quality}"
-        confidence = round(min(float(dominant_score), 63.0), 1)
+        trade_quality = "DEAD MARKET"
+        quality_label = "Ultra-low volatility — Market flat, signals paused"
+        all_bear_reasons.append("⚠️ ATR below threshold — low volatility consolidation")
+    elif has_strong_conflict:
+        direction = "WAIT"
+        trade_quality = "CHOPPY / CONFLICTING"
+        quality_label = "Indicator Conflict — Wait for Breakout"
+        all_bear_reasons.append("⚠️ Conflicting signals: Trend vs Oscillator divergence")
+    elif (
+        (weighted_sum >= 5.0 and bull_confirmations >= 4 and trend_direction >= 0)
+        or (has_pullback_up and bull_confirmations >= 3)
+        or (has_sr_reversal_up and bull_confirmations >= 3)
+    ):
+        direction = "CALL"
+        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bull_confirmations >= 5) else "A HIGH CONFLUENCE"
+        framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
+        quality_label = f"High-Probability Bullish ({bull_confirmations}/10 Confluences){framework_tag}"
+    elif (
+        (weighted_sum <= -5.0 and bear_confirmations >= 4 and trend_direction <= 0)
+        or (has_pullback_down and bear_confirmations >= 3)
+        or (has_sr_reversal_down and bear_confirmations >= 3)
+    ):
+        direction = "PUT"
+        trade_quality = "A+ PREMIUM SETUP" if (len(matched_frameworks) > 0 and bear_confirmations >= 5) else "A HIGH CONFLUENCE"
+        framework_tag = f" [{matched_frameworks[0]}]" if matched_frameworks else ""
+        quality_label = f"High-Probability Bearish ({bear_confirmations}/10 Confluences){framework_tag}"
     else:
-        direction = dominant_bias
-        confidence = round(min(max(float(dominant_score), 65.0), 96.0), 1)
-        if dominant_score >= 85 and len(matched_frameworks) > 0:
-            trade_quality = "A+ PREMIUM SETUP"
-            framework_tag = f" [{matched_frameworks[0]}]"
-            quality_label = f"High-Probability {direction} ({dominant_score}/100 Score, {confluence_count}/10 Confluences){framework_tag}"
-        else:
-            trade_quality = f"QUALIFIED SETUP ({dominant_score} pts)"
-            quality_label = f"Confirmed {direction} ({dominant_score}/100 Score, {confluence_count}/10 Confluences)"
+        direction = "WAIT"
+        trade_quality = "INSUFFICIENT CONFLUENCE"
+        quality_label = "Consolidation / Weak Setup — Wait for clear confirmation"
+
+    # ── COUNTER-TREND VETO ────────────────────────────────────────────────────
+    if direction == "CALL" and trend_direction == -1 and not has_sr_reversal_up and not divergence_dict.get("bullish_divergence"):
+        direction = "WAIT"
+        trade_quality = "COUNTER-TREND BLOCKED"
+        quality_label = "Bullish signal blocked — Prevailing EMA trend is bearish"
+        all_bear_reasons.append("🚫 Counter-trend entry vetoed (Guide Rule: Do not trade against main trend)")
+    elif direction == "PUT" and trend_direction == 1 and not has_sr_reversal_down and not divergence_dict.get("bearish_divergence"):
+        direction = "WAIT"
+        trade_quality = "COUNTER-TREND BLOCKED"
+        quality_label = "Bearish signal blocked — Prevailing EMA trend is bullish"
+        all_bull_reasons.append("🚫 Counter-trend entry vetoed (Guide Rule: Do not trade against main trend)")
+
+    # ── CONSECUTIVE RUN EXHAUSTION VETO ───────────────────────────────────────
+    if exhaustion_dict.get("exhaustion_risk"):
+        if direction == "CALL" and exhaustion_dict.get("run_direction") == "GREEN":
+            direction = "WAIT"
+            trade_quality = "EXHAUSTION VETO"
+            quality_label = f"VETO: {exhaustion_dict['run_count']} consecutive green candles (Exhaustion risk)"
+            all_bear_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
+        elif direction == "PUT" and exhaustion_dict.get("run_direction") == "RED":
+            direction = "WAIT"
+            trade_quality = "EXHAUSTION VETO"
+            quality_label = f"VETO: {exhaustion_dict['run_count']} consecutive red candles (Exhaustion risk)"
+            all_bull_reasons.append(f"🛑 {exhaustion_dict['warning_en']}")
+
+    # ── MACRO TREND VETO (EMA 50 / EMA 200) ──────────────────────────────────
+    macro_dir = macro_trend_dict.get("trend", "NEUTRAL")
+    if macro_dir == "STRONG_BEARISH" and direction == "CALL" and not divergence_dict.get("bullish_divergence"):
+        direction = "WAIT"
+        trade_quality = "MACRO DOWNTREND VETO"
+        quality_label = "VETO: Higher-timeframe macro trend is strongly bearish"
+        all_bear_reasons.append("🚫 Macro Trend Veto: Price < EMA 50 < EMA 200 (Do not buy into macro downtrend)")
+    elif macro_dir == "STRONG_BULLISH" and direction == "PUT" and not divergence_dict.get("bearish_divergence"):
+        direction = "WAIT"
+        trade_quality = "MACRO UPTREND VETO"
+        quality_label = "VETO: Higher-timeframe macro trend is strongly bullish"
+        all_bull_reasons.append("🚫 Macro Trend Veto: Price > EMA 50 > EMA 200 (Do not sell into macro uptrend)")
+
+    # ── Confidence Score Calculation ──────────────────────────────────────────
+    confluence_count = max(bull_confirmations, bear_confirmations)
+    base_confidence = (confluence_count / 10.0) * 100.0
+
+    if direction == "WAIT":
+        confidence = round(min(base_confidence, 42.0), 1)
+    elif trade_quality == "A+ PREMIUM SETUP":
+        confidence = round(min(max(base_confidence, 82.0), 94.0), 1)
+    elif trade_quality == "A HIGH CONFLUENCE":
+        confidence = round(min(max(base_confidence, 70.0), 81.0), 1)
+    else:
+        confidence = round(min(max(base_confidence, 60.0), 69.0), 1)
 
     # ── Gemini AI Arbiter Cross-Verification ──────────────────────────────────
     indicators_snapshot = {
@@ -728,61 +649,40 @@ def generate_signal(
         math_signal=initial_math_signal,
         gemini_key=gemini_api_key,
         openai_key=openai_api_key,
-        groq_key=groq_api_key,
-        openrouter_key=openrouter_api_key,
-        cloudflare_key=cloudflare_api_key,
     )
 
     if gemini_result.get("status") == "active":
         gemini_dir = gemini_result.get("direction")
         gemini_conf = gemini_result.get("confidence", confidence)
         trap_risk = gemini_result.get("trap_risk", "LOW")
-        prov = gemini_result.get("provider", "ai")
         provider_name = (
-            "Groq AI" if prov == "groq"
-            else "Gemini AI" if prov == "gemini"
-            else "OpenRouter" if prov == "openrouter"
-            else "ChatGPT" if prov == "openai"
-            else "Cloudflare AI" if prov == "cloudflare"
-            else "AI Arbiter"
+            "Gemini AI"
+            if gemini_result.get("provider") == "gemini"
+            else ("ChatGPT" if gemini_result.get("provider") == "openai" else "AI Arbiter")
         )
 
         if trap_risk == "HIGH" and direction != "WAIT":
             direction = "WAIT"
             trade_quality = f"{provider_name.upper()} TRAP VETO"
-            confidence = 65.0
-            quality_label = f"Trade Paused: {trade_quality}"
             all_bear_reasons.append(f"🤖 {provider_name} Trap Veto: {gemini_result.get('analysis_en')}")
         elif direction != "WAIT" and gemini_dir != "WAIT" and gemini_dir != direction:
             direction = "WAIT"
             trade_quality = f"{provider_name.upper()} CONFLICT VETO"
-            confidence = 50.0
-            quality_label = f"Trade Paused: {trade_quality}"
             all_bear_reasons.append(
                 f"🤖 {provider_name} Conflict Veto: Algorithmic signal was {direction} but AI detected opposing momentum ({gemini_dir})."
             )
         elif direction != "WAIT" and gemini_dir == direction:
-            confidence = round(max(confidence, (confidence * 0.5) + (gemini_conf * 0.5)), 1)
+            confidence = round((confidence * 0.5) + (gemini_conf * 0.5), 1)
             trade_quality = f"AI CONFIRMED ({trade_quality})"
             all_bull_reasons.append(f"🤖 {provider_name}: {gemini_result.get('analysis_en')}")
 
-    # Enforce strict 65%+ cutoff on final confidence
-    if direction == "WAIT" and confidence >= 65:
-        confidence = 63.0
-    elif direction != "WAIT" and confidence < 65:
-        direction = "WAIT"
-        trade_quality = f"AWAITING 65+ SCORE CONFLUENCE ({confidence}/100)"
-        quality_label = f"Trade Paused: {trade_quality}"
-        confidence = 63.0
-
     # ── Exact Entry Timing & Horizon Information ──────────────────────────────
     entry_timing_info = {
-        "rule_en": "Enter trade at the OPEN of the NEXT candle strictly within the first 0-10 seconds. DO NOT enter mid-candle.",
-        "rule_hi": "Agli candle shuru hote hi pehle 0-10 seconds ke andar entry lein. Candle ke beech me trade bilkul na lein varna loss hoga.",
-        "recommended_action": f"Take {direction} trade on next candle open (00:00 - 00:10)" if direction != "WAIT" else "Wait. No confirmed tradeable setup at this moment.",
-        "entry_window": "Candle Open Window: 00:00 - 00:10 (Strict)",
-        "late_entry_warning": "DO NOT ENTER after 10 seconds of candle open — high loss probability due to wick pullbacks.",
-        "expiry_duration": "1-5 Minutes (Fixed expiry)",
+        "rule_en": "Enter trade at the OPEN of the NEXT 5-minute candle within the first 10-15 seconds.",
+        "rule_hi": "Agli 5-minute candle shuru hote hi pehle 10-15 seconds me trade lein (Candle Open Entry).",
+        "recommended_action": f"Take {direction} trade on next candle open" if direction != "WAIT" else "Wait. No confirmed tradeable setup at this moment.",
+        "entry_window": "First 15 seconds of candle open (00:00 - 00:15)",
+        "expiry_duration": "5 Minutes (Fixed M5 expiry)",
         "confluence_count": confluence_count,
         "quality_tier": trade_quality,
         "quality_label": quality_label,
@@ -795,38 +695,12 @@ def generate_signal(
     nearest_support = max((s for s in supports if s <= close), default=None)
     nearest_resistance = min((r for r in resistances if r >= close), default=None)
 
-    # ── Next Probable Setup Calculation ───────────────────────────────────────
-    raw_bull_pct = round((bull_total / max(bull_total + bear_total, 1)) * 100, 1)
-    bull_pct = min(95.0, max(5.0, raw_bull_pct))
-    bear_pct = round(100.0 - bull_pct, 1)
-    probable_bias = dominant_bias
-    bias_pct = int(round(max(bull_pct, bear_pct)))
-    watch_trigger = (
-        f"Agli candle EMA 9 ({ema9:.2f}) ke upar RSI > 50 & ADX > 22 ke sath close hone par confirmed CALL entry banegi"
-        if probable_bias == "CALL"
-        else f"Agli candle EMA 9 ({ema9:.2f}) ke niche RSI < 50 & ADX > 22 ke sath close hone par confirmed PUT entry banegi"
-    )
-    setup_summary = (
-        f"Status: WAIT • Market developing {dominant_bias} bias ({bias_pct}% power). {watch_trigger}."
-        if direction == "WAIT"
-        else f"Strong {direction} momentum active ({bias_pct}%). {watch_trigger}."
-    )
-    next_probable_setup = {
-        "bias": probable_bias,
-        "biasPercentage": bias_pct,
-        "bullishPower": bull_pct,
-        "bearishPower": bear_pct,
-        "watchTrigger": watch_trigger,
-        "setupSummary": setup_summary,
-    }
-
     return {
         "direction": direction,
         "confidence": confidence,
         "trade_quality": trade_quality,
         "entry_timing": entry_timing_info,
         "confluence_score": round((confluence_count / 10.0) * 100.0, 1),
-        "next_probable_setup": next_probable_setup,
         "gemini_arbiter": gemini_result,
         "indicators": {
             "rsi": {

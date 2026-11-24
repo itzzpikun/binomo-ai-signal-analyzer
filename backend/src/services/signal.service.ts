@@ -1,30 +1,20 @@
 // ============================================================
-// src/services/signal.service.ts — Calls Python AI engine with Native Fallback
+// src/services/signal.service.ts — Calls Python AI engine
 // ============================================================
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import ENV from '../config/env';
 import { Signal, ISignal } from '../models/Signal.model';
 import { Performance } from '../models/Performance.model';
-import type { OHLCCandle, SignalResult, Outcome } from '../types';
-import { analyzeCandlesNative } from './nativeSignalEngine';
+import type { OHLCCandle, SignalResult, Direction, Outcome } from '../types';
 
 export const signalService = {
   async analyzeCandles(
     symbol: string,
     interval: string,
     candles: OHLCCandle[],
-    aiKeys?: {
-      geminiKey?: string;
-      openaiKey?: string;
-      groqKey?: string;
-      deepseekKey?: string;
-      openrouterKey?: string;
-    }
-  ): Promise<any> {
-    const geminiKey = aiKeys?.geminiKey;
-    const openaiKey = aiKeys?.openaiKey;
-
-    // 1. Try calling the Python AI engine if available (timeout 3.5s)
+    geminiKey?: string,
+    openaiKey?: string
+  ): Promise<SignalResult> {
     try {
       const response = await axios.post(
         `${ENV.AI_ENGINE_URL}/analyze`,
@@ -36,7 +26,7 @@ export const signalService = {
           openai_api_key: openaiKey,
         },
         {
-          timeout: 3500,
+          timeout: 30000,
           headers: {
             'Content-Type': 'application/json',
             ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {}),
@@ -44,82 +34,20 @@ export const signalService = {
           },
         }
       );
-      if (response.data && (response.data.direction || response.data.signal)) {
-        const res = response.data;
-        // Ensure next_probable_setup is present
-        if (!res.next_probable_setup) {
-          const native = analyzeCandlesNative(candles, symbol, interval);
-          res.next_probable_setup = native.next_probable_setup;
-        }
-        return res;
-      }
+      return response.data as SignalResult;
     } catch (err) {
-      console.log(`[SignalService] Python AI engine at ${ENV.AI_ENGINE_URL} not available (${(err as Error).message}) — using high-performance Native Engine`);
-    }
-
-    // 2. High-performance Native TypeScript Technical Analysis & Confluence Fallback
-    const nativeResult = analyzeCandlesNative(candles, symbol, interval);
-
-    // 3. If alternative AI keys provided (Groq, DeepSeek, OpenRouter, Gemini, OpenAI), evaluate with AI provider
-    if (
-      aiKeys &&
-      (aiKeys.groqKey || aiKeys.deepseekKey || aiKeys.geminiKey || aiKeys.openaiKey || aiKeys.openrouterKey)
-    ) {
-      try {
-        const { aiProviderService } = await import('./aiProvider.service');
-        const aiEval = await aiProviderService.evaluateMarketSetup({
-          symbol,
-          interval,
-          technicalDirection: nativeResult.direction,
-          technicalScore: nativeResult.confidence,
-          candles,
-          indicators: {
-            rsi: nativeResult.indicators?.rsi?.value ?? 50,
-            ema8: nativeResult.indicators?.ema?.ema9 ?? 0,
-            ema21: nativeResult.indicators?.ema?.ema21 ?? 0,
-            adx: nativeResult.indicators?.adx?.adx ?? 20,
-            macdHist: nativeResult.indicators?.macd?.histogram ?? 0,
-            ao: 0,
-            bullPower: nativeResult.next_probable_setup?.bullishPower ?? 50,
-            bearPower: nativeResult.next_probable_setup?.bearishPower ?? 50,
-          },
-          keys: aiKeys,
-        });
-
-        if (aiEval && aiEval.provider) {
-          nativeResult.gemini_arbiter = {
-            ...nativeResult.gemini_arbiter,
-            provider: aiEval.provider,
-            trap_risk: aiEval.trap_risk,
-            analysis_en: aiEval.analysis_en,
-            analysis_hi: aiEval.analysis_hi,
-            verdict: aiEval.verdict,
-            contradiction_detected: aiEval.contradiction_detected,
-            models: aiEval.models,
-          };
-
-          if (aiEval.contradiction_detected) {
-            nativeResult.direction = 'WAIT';
-            nativeResult.trade_quality = 'AI_CONTRADICTION_REJECTED';
-            nativeResult.reasons.wait_reasons = [
-              ...(nativeResult.reasons.wait_reasons || []),
-              aiEval.analysis_en,
-            ];
-          } else if (aiEval.direction === 'WAIT') {
-            nativeResult.direction = 'WAIT';
-            nativeResult.trade_quality = 'AI_ARBITER_WAIT';
-          } else if (aiEval.confidence >= 75) {
-            nativeResult.confidence = aiEval.confidence;
-            nativeResult.direction = aiEval.direction;
-            nativeResult.trade_quality = `AI_CONFIRMED (${aiEval.provider})`;
-          }
-        }
-      } catch (e) {
-        console.warn('[SignalService] AI Provider evaluation error:', (e as Error).message);
+      const axiosErr = err as AxiosError;
+      if (axiosErr.response) {
+        throw Object.assign(
+          new Error(`AI engine error ${axiosErr.response.status}: ${JSON.stringify(axiosErr.response.data)}`),
+          { statusCode: 502, status: 'AI_ENGINE_ERROR' }
+        );
       }
+      throw Object.assign(
+        new Error(`Cannot reach AI engine at ${ENV.AI_ENGINE_URL}: ${(err as Error).message}`),
+        { statusCode: 503, status: 'AI_ENGINE_UNAVAILABLE' }
+      );
     }
-
-    return nativeResult;
   },
 
   async saveSignal(

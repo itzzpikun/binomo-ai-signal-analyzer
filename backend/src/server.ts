@@ -19,10 +19,8 @@ import { WebSocketService } from './services/websocket.service';
 
 import marketRoutes from './routes/market.routes';
 import signalRoutes from './routes/signal.routes';
-import scanRoutes from './routes/scan.routes';
 import backtestRoutes from './routes/backtest.routes';
 import performanceRoutes from './routes/performance.routes';
-import aiRoutes from './routes/ai.routes';
 
 async function ensureAiEngine(): Promise<void> {
   try {
@@ -88,12 +86,12 @@ async function bootstrap(): Promise<void> {
 
   // ── Determine Frontend Distribution Directory ───────────
   const candidatePaths = [
-    path.resolve(__dirname, '../../frontend/dist'),
-    path.resolve(process.cwd(), '../frontend/dist'),
-    path.resolve(process.cwd(), 'frontend/dist'),
     path.resolve(__dirname, '../public'),
     path.resolve(__dirname, './public'),
+    path.resolve(__dirname, '../../frontend/dist'),
     path.resolve(process.cwd(), 'public'),
+    path.resolve(process.cwd(), '../frontend/dist'),
+    path.resolve(process.cwd(), 'frontend/dist'),
     path.resolve(process.cwd(), 'dist/public'),
   ];
   const frontendDist = candidatePaths.find((p) => fs.existsSync(path.join(p, 'index.html')));
@@ -122,10 +120,8 @@ async function bootstrap(): Promise<void> {
   // ── API Routes ────────────────────────────────────────────
   app.use('/api/market', marketRoutes);
   app.use('/api/signal', signalRoutes);
-  app.use('/api/scan', scanRoutes);
   app.use('/api/backtest', backtestRoutes);
   app.use('/api/performance', performanceRoutes);
-  app.use('/api/ai', aiRoutes);
 
   // ── Serve Frontend Static Assets ──────────────────────────
   if (frontendDist) {
@@ -134,9 +130,6 @@ async function bootstrap(): Promise<void> {
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path.startsWith('/health')) {
         return next();
-      }
-      if (req.path.match(/\.(js|css|svg|png|ico|map|json|woff2?|ttf)$/i)) {
-        return res.status(404).send('Asset not found');
       }
       res.sendFile(path.join(frontendDist, 'index.html'));
     });
@@ -160,17 +153,20 @@ async function bootstrap(): Promise<void> {
   // ── WebSocket ─────────────────────────────────────────────
   const wsService = new WebSocketService(server);
 
-  // ── Listen immediately so Render health checks succeed without delay ──
+  // ── MongoDB ───────────────────────────────────────────────
+  try {
+    await connectDatabase();
+  } catch (err) {
+    console.error('[Startup] MongoDB connection failed — continuing without DB (some features will error)');
+    console.error((err as Error).message);
+  }
+
+  // ── Listen ────────────────────────────────────────────────
   server.listen(ENV.PORT, () => {
     console.log(`\n🚀 Binomo AI Analyzer backend running`);
     console.log(`   HTTP  → http://localhost:${ENV.PORT}`);
     console.log(`   WS    → ws://localhost:${ENV.PORT}/ws`);
     console.log(`   Env   → ${ENV.NODE_ENV}\n`);
-  });
-
-  // ── MongoDB (async, non-blocking) ─────────────────────────
-  connectDatabase().catch((err) => {
-    console.error('[Startup] MongoDB connection failed — continuing without DB:', (err as Error).message);
   });
 
   // ── Graceful shutdown ─────────────────────────────────────

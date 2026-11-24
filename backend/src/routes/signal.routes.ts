@@ -8,6 +8,10 @@ import { analysisRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
+const VALID_SYMBOLS = [
+  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD',
+  'BTC/USD', 'ETH/USD', 'XAU/USD', 'US30', 'NAS100', 'CRYPTO_IDX',
+];
 const VALID_INTERVALS = ['1min', '5min', '15min'];
 
 // POST /api/signal/analyze
@@ -19,14 +23,20 @@ router.post(
       .notEmpty()
       .isString()
       .trim()
-      .withMessage('symbol is required'),
+      .toUpperCase()
+      .isIn(VALID_SYMBOLS)
+      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
     body('interval')
       .notEmpty()
       .isIn(VALID_INTERVALS)
       .withMessage('interval must be 1min, 5min, or 15min'),
     body('candles')
-      .isArray({ min: 1 })
-      .withMessage('candles must be an array with at least 1 entry'),
+      .isArray({ min: 10 })
+      .withMessage('candles must be an array with at least 10 entries'),
+    body('candles.*.open').isFloat({ min: 0 }).withMessage('open must be a positive number'),
+    body('candles.*.high').isFloat({ min: 0 }).withMessage('high must be a positive number'),
+    body('candles.*.low').isFloat({ min: 0 }).withMessage('low must be a positive number'),
+    body('candles.*.close').isFloat({ min: 0 }).withMessage('close must be a positive number'),
   ],
   signalController.analyze.bind(signalController)
 );
@@ -39,7 +49,9 @@ router.get(
       .optional()
       .isString()
       .trim()
-      .withMessage('symbol must be a string'),
+      .toUpperCase()
+      .isIn(VALID_SYMBOLS)
+      .withMessage(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`),
     query('limit')
       .optional()
       .isInt({ min: 1, max: 200 })
