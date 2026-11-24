@@ -151,6 +151,39 @@ export interface BacktestResult {
   signals: Signal[];
 }
 
+export interface RiskStatus {
+  negativeExpectancy: {
+    active: boolean;
+    sampleSize: number;
+    winRate: number;
+    expectancyPerTrade: number;
+    message?: string;
+  };
+  dailyLimit: {
+    active: boolean;
+    lossesToday: number;
+    pnlToday: number;
+    pnlTodayPct: number;
+    reason?: string;
+    message?: string;
+  };
+}
+
+export interface Trade {
+  _id?: string;
+  time: string | Date;
+  asset: string;
+  direction: 'CALL' | 'PUT';
+  entry: number;
+  expiry: string;
+  stake: number;
+  result: 'WIN' | 'LOSS' | 'PENDING' | 'TIE';
+  exitPrice?: number;
+  pnl?: number;
+  notes?: string;
+  source?: 'real' | 'manual' | 'signal';
+}
+
 export interface PerformanceSummary {
   totalSignals: number;
   verifiedSignals: number;
@@ -158,8 +191,12 @@ export interface PerformanceSummary {
   losses: number;
   accuracy: number;
   bestAsset: string | null;
+  totalPnL?: number;
+  profitFactor?: number;
   byAsset: AssetPerformance[];
   byTimeframe: TimeframePerformance[];
+  riskStatus?: RiskStatus;
+  note?: string;
 }
 
 export interface AssetPerformance {
@@ -169,6 +206,7 @@ export interface AssetPerformance {
   wins: number;
   losses: number;
   accuracy: number;
+  pnl?: number;
 }
 
 export interface TimeframePerformance {

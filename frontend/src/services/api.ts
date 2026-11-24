@@ -189,11 +189,33 @@ export const runBacktest = async (params: BacktestParams): Promise<BacktestResul
 };
 
 // ----------------------------------------------------------------
-// Performance
+// Performance & Trades
 // ----------------------------------------------------------------
 
 export const getPerformance = async (): Promise<PerformanceSummary> => {
   const response = await apiClient.get('/api/performance/summary');
+  return response.data;
+};
+
+export const getTrades = async (limit = 100, asset?: string): Promise<{ trades: Trade[]; riskStatus: RiskStatus }> => {
+  const params: Record<string, any> = { limit };
+  if (asset) params.asset = asset;
+  const response = await apiClient.get('/api/trades', { params });
+  return response.data;
+};
+
+export const logTrade = async (trade: Partial<Trade>): Promise<{ trade: Trade }> => {
+  const response = await apiClient.post('/api/trades', trade);
+  return response.data;
+};
+
+export const updateTrade = async (id: string, result: 'WIN' | 'LOSS' | 'PENDING' | 'TIE', exitPrice?: number): Promise<{ trade: Trade }> => {
+  const response = await apiClient.patch(`/api/trades/${id}`, { result, exitPrice });
+  return response.data;
+};
+
+export const getRiskStatus = async (): Promise<{ riskStatus: RiskStatus }> => {
+  const response = await apiClient.get('/api/trades/risk-status');
   return response.data;
 };
 
@@ -215,6 +237,10 @@ export const api = {
     verifySignal(signalId, outcome),
   runBacktest: (params: BacktestParams) => runBacktest(params),
   getPerformance: () => getPerformance(),
+  getTrades: (limit = 100, asset?: string) => getTrades(limit, asset),
+  logTrade: (trade: Partial<Trade>) => logTrade(trade),
+  updateTrade: (id: string, result: 'WIN' | 'LOSS' | 'PENDING' | 'TIE', exitPrice?: number) => updateTrade(id, result, exitPrice),
+  getRiskStatus: () => getRiskStatus(),
 };
 
 export default apiClient;

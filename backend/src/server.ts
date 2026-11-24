@@ -22,6 +22,7 @@ import signalRoutes from './routes/signal.routes';
 import backtestRoutes from './routes/backtest.routes';
 import performanceRoutes from './routes/performance.routes';
 import scanRoutes from './routes/scan.routes';
+import tradeRoutes from './routes/trade.routes';
 
 async function ensureAiEngine(): Promise<void> {
   try {
@@ -124,6 +125,7 @@ async function bootstrap(): Promise<void> {
   app.use('/api/scan', scanRoutes);
   app.use('/api/backtest', backtestRoutes);
   app.use('/api/performance', performanceRoutes);
+  app.use('/api/trades', tradeRoutes);
 
   // ── Serve Frontend Static Assets ──────────────────────────
   if (frontendDist) {
