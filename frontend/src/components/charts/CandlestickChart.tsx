@@ -103,7 +103,7 @@ const CandlestickChart: React.FC = () => {
       layout: {
         background: { type: ColorType.Solid, color: CHART_COLORS.background },
         textColor: CHART_COLORS.text,
-        fontSize: 11,
+        fontSize: 12,
       },
       grid: {
         vertLines: { color: CHART_COLORS.grid, style: 2 },
@@ -127,14 +127,33 @@ const CandlestickChart: React.FC = () => {
       rightPriceScale: {
         borderColor: CHART_COLORS.border,
         autoScale: true,
+        scaleMargins: {
+          top: 0.08,
+          bottom: 0.08,
+        },
       },
       timeScale: {
         borderColor: CHART_COLORS.border,
         timeVisible: true,
         secondsVisible: false,
+        barSpacing: 14,
+        minBarSpacing: 5,
+        rightOffset: 6,
+      },
+      handleScroll: {
+        horzTouchDrag: true,
+        vertTouchDrag: false, // Prevents mobile touch freeze when scrolling page
+        mouseWheel: true,
+        pressedMouseMove: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        axisDoubleClickReset: true,
+        pinch: true,
+        mouseWheel: true,
       },
       width: containerRef.current.clientWidth || 600,
-      height: Math.max(containerRef.current.clientHeight || 0, 380),
+      height: Math.max(containerRef.current.clientHeight || 0, 440),
     });
 
     chartRef.current = chart;
@@ -239,9 +258,17 @@ const CandlestickChart: React.FC = () => {
     ema9SeriesRef.current.setData(ema9Data);
     ema21SeriesRef.current.setData(ema21Data);
 
-    // Only fit content on initial mount or when symbol changes (avoids resetting user pan/zoom on tick)
+    // Scroll to the most recent candles with optimal spacing so candles are bold and easy to read
     if (!hasFittedRef.current || prevSymbolRef.current !== selectedSymbol) {
-      chartRef.current?.timeScale().fitContent();
+      const total = uniqueSorted.length;
+      if (total > 35) {
+        chartRef.current?.timeScale().setVisibleLogicalRange({
+          from: total - 35,
+          to: total + 3,
+        });
+      } else {
+        chartRef.current?.timeScale().fitContent();
+      }
       hasFittedRef.current = true;
       prevSymbolRef.current = selectedSymbol;
     }
@@ -269,21 +296,33 @@ const CandlestickChart: React.FC = () => {
     }
     if (chartMode !== 'tradingview' && chartRef.current && containerRef.current) {
       const w = containerRef.current.clientWidth || 600;
-      const h = Math.max(containerRef.current.clientHeight || 0, 380);
+      const h = Math.max(containerRef.current.clientHeight || 0, 440);
       chartRef.current.applyOptions({ width: w, height: h });
-      chartRef.current.timeScale().fitContent();
+      const total = candles.length;
+      if (total > 35) {
+        chartRef.current.timeScale().setVisibleLogicalRange({
+          from: total - 35,
+          to: total + 3,
+        });
+      } else {
+        chartRef.current.timeScale().fitContent();
+      }
     }
-  }, [chartMode]);
+  }, [chartMode, candles.length]);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (chartRef.current) {
-          chartRef.current.applyOptions({
-            width: entry.contentRect.width,
-            height: entry.contentRect.height,
-          });
+          const w = Math.floor(entry.contentRect.width);
+          const h = Math.floor(entry.contentRect.height);
+          if (w > 0 && h > 0) {
+            chartRef.current.applyOptions({
+              width: w,
+              height: h,
+            });
+          }
         }
       }
     });
@@ -402,7 +441,7 @@ const CandlestickChart: React.FC = () => {
 
       {/* TradingView Widget Container — Kept in DOM, display toggled */}
       <div
-        className="flex-1 w-full min-h-[380px] sm:min-h-[440px] p-1"
+        className="flex-1 w-full min-h-[440px] sm:min-h-[500px] lg:min-h-[560px] p-1"
         style={{ display: chartMode === 'tradingview' ? 'block' : 'none' }}
       >
         <TradingViewWidget symbol={selectedSymbol} interval={selectedInterval} />
@@ -410,32 +449,32 @@ const CandlestickChart: React.FC = () => {
 
       {/* Lightweight Charts / Binomo Candlestick Canvas Container */}
       <div
-        className="flex-1 w-full flex flex-col min-h-[380px] sm:min-h-[440px]"
+        className="flex-1 w-full flex flex-col min-h-[440px] sm:min-h-[500px] lg:min-h-[560px]"
         style={{ display: chartMode !== 'tradingview' ? 'flex' : 'none' }}
       >
         {/* Binomo Live Candlestick HUD */}
         {chartMode === 'binomo' && latestCandle && (
-          <div className="px-3 py-1.5 bg-yellow-950/40 border-b border-yellow-500/30 flex items-center justify-between text-xs text-yellow-300 flex-wrap gap-1">
+          <div className="px-2.5 sm:px-3 py-1 bg-yellow-950/30 border-b border-yellow-500/20 flex items-center justify-between text-xs text-yellow-300 flex-wrap gap-1">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-yellow-400 flex items-center gap-1">
+              <span className="font-bold text-yellow-400 flex items-center gap-1 text-[11px] sm:text-xs">
                 <span>🟡</span>
                 <span>Binomo Live Candlestick Feed</span>
               </span>
-              <span className="text-[11px] text-gray-300">
+              <span className="text-[10px] sm:text-[11px] text-gray-300">
                 • Body: {Math.round((Math.abs(latestCandle.close - latestCandle.open) / Math.max(latestCandle.high - latestCandle.low, 0.0001)) * 100)}%
               </span>
-              <span className="text-[11px] font-semibold">
+              <span className="text-[10px] sm:text-[11px] font-semibold">
                 {latestCandle.close >= latestCandle.open ? '🟢 Bullish Action' : '🔴 Bearish Action'}
               </span>
             </div>
-            <span className="text-[11px] font-mono font-bold text-yellow-400">
+            <span className="text-[10px] sm:text-[11px] font-mono font-bold text-yellow-400 hidden sm:inline">
               Binomo Strategy #1 (EMA 8/21) & Candlestick Patterns
             </span>
           </div>
         )}
 
         {/* OHLC Interactive Status Bar */}
-        <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/40 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400">
+        <div className="px-2.5 sm:px-4 py-1 sm:py-1.5 bg-gray-950/50 border-b border-gray-800/40 flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono text-gray-400 overflow-x-auto">
           {hoverData ? (
             <>
               <span className="text-gray-500">{hoverData.time}</span>
@@ -464,7 +503,7 @@ const CandlestickChart: React.FC = () => {
         </div>
 
         {/* Lightweight Charts Canvas */}
-        <div ref={containerRef} className="flex-1 w-full min-h-[380px] sm:min-h-[440px]" />
+        <div ref={containerRef} className="flex-1 w-full min-h-[400px] sm:min-h-[460px] lg:min-h-[510px]" />
       </div>
     </div>
   );

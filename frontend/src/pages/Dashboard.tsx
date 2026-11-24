@@ -167,14 +167,14 @@ const Dashboard: React.FC = () => {
     analyzeSignal,
   ]);
 
-  // Initial fetch on mount / symbol change + continuous 10s automatic live refresh
+  // Initial fetch on mount / symbol change + continuous 5s automatic live refresh
   useEffect(() => {
     isMountedRef.current = true;
     fetchMarketDataAndAnalyze();
 
     const intervalId = setInterval(() => {
       fetchMarketDataAndAnalyze();
-    }, 10_000);
+    }, 5_000);
 
     return () => {
       isMountedRef.current = false;
@@ -204,13 +204,13 @@ const Dashboard: React.FC = () => {
           <AssetSelector />
           <TimeframeSelector />
 
-          {/* Automatic Live 10s Sync Indicator — No manual button needed */}
+          {/* Automatic Live 5s Sync Indicator */}
           <div
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
-            title="Automatic 10s Live Signal & Market Sync (No manual refresh needed)"
+            title="Automatic 5s Live Signal & Market Sync"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-mono">LIVE • 10s Auto</span>
+            <span className="font-mono">LIVE • 5s Auto</span>
           </div>
 
           {/* Visible SIMULATED Warning Badge */}
@@ -278,13 +278,13 @@ const Dashboard: React.FC = () => {
       {/* Main grid */}
       {dataAvailable && (
         <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 flex-1 min-h-0">
-          {/* Chart — Responsive & Collapsible on Mobile */}
+          {/* Chart — Prominent, Expanded & Mobile Optimized */}
           {showChartOnMobile && (
-            <div className="w-full lg:w-3/5 min-h-[220px] sm:min-h-[380px] flex flex-col">
+            <div className="w-full lg:w-[63%] xl:w-[67%] min-h-[440px] sm:min-h-[500px] lg:min-h-[560px] flex flex-col">
               {candles.length > 0 ? (
                 <CandlestickChart />
               ) : (
-                <div className="bg-gray-900 border border-gray-800 rounded-xl flex-1 flex items-center justify-center p-6 min-h-[220px]">
+                <div className="bg-gray-900 border border-gray-800 rounded-xl flex-1 flex items-center justify-center p-6 min-h-[360px]">
                   <div className="flex flex-col items-center gap-3">
                     <LoadingSpinner />
                     <p className="text-gray-500 text-xs sm:text-sm">Loading market candles…</p>
@@ -294,8 +294,8 @@ const Dashboard: React.FC = () => {
             </div>
           )}
 
-          {/* Signal panel — 40% Desktop / Full on Mobile */}
-          <div className="w-full lg:w-2/5 flex flex-col gap-2.5 sm:gap-3">
+          {/* Signal panel — 37% Desktop / Full on Mobile */}
+          <div className="w-full lg:w-[37%] xl:w-[33%] flex flex-col gap-2.5 sm:gap-3">
             {/* Dual Mode Switch: Binomo Candlestick Predictor vs Standard Confluence vs Both */}
             <div className="flex items-center gap-1 p-1 bg-gray-900/95 border border-gray-800 rounded-xl shadow-lg">
               <button
