@@ -132,6 +132,8 @@ def analyze():
     try:
         signal = generate_signal(
             cleaned["candles"],
+            interval=cleaned.get("interval", "5min"),
+            symbol=cleaned.get("symbol", "EUR/USD"),
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
         )

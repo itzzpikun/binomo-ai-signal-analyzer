@@ -8,6 +8,7 @@ Enhanced with official Binomo Candlestick Strategy Guide & Binomo Trader's Guide
 - 25+ Japanese Candlestick Patterns with Context-Aware Location Multipliers
 - Exact Entry Timing Rules (Candle Open 10-15s, Fixed Expiry)
 """
+import os
 import math
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -47,6 +48,63 @@ WEIGHTS = {
 }
 
 MIN_CANDLES = 20  # Minimum candle history required for analysis
+
+# ── ATR Volatility Thresholds (% of price) per Asset Class ───────────────────
+# Named constant defining the minimum ATR% threshold below which market is flat/dead
+DEAD_MARKET_ATR_THRESHOLDS = {
+    "FOREX": 0.02,        # 0.02% of price for Forex pairs (e.g. 2.1 pips on EUR/USD)
+    "CRYPTO": 0.05,       # 0.05% for Crypto
+    "COMMODITIES": 0.03,  # 0.03% for Commodities (Gold, Silver, Oil)
+    "INDICES": 0.02,      # 0.02% for Indices (US30, NAS100)
+    "DEFAULT": 0.02,      # Default baseline (0.02%)
+}
+
+
+def get_dead_market_threshold(symbol: str) -> float:
+    """Return the minimum ATR percentage threshold for the given symbol's asset class."""
+    sym = (symbol or "").upper()
+    if any(c in sym for c in ["BTC", "ETH", "BNB", "SOL", "CRYPTO"]):
+        return DEAD_MARKET_ATR_THRESHOLDS["CRYPTO"]
+    elif any(c in sym for c in ["XAU", "XAG", "OIL", "GOLD"]):
+        return DEAD_MARKET_ATR_THRESHOLDS["COMMODITIES"]
+    elif any(c in sym for c in ["US30", "NAS100", "SPX500", "INDEX", "SPX"]):
+        return DEAD_MARKET_ATR_THRESHOLDS["INDICES"]
+    elif "/" in sym or "USD" in sym or "EUR" in sym or "GBP" in sym or "JPY" in sym:
+        return DEAD_MARKET_ATR_THRESHOLDS["FOREX"]
+    return DEAD_MARKET_ATR_THRESHOLDS["DEFAULT"]
+
+
+def _is_candle_forming(candle: dict, interval_sec: int) -> bool:
+    """
+    Check if a candle is currently forming (unclosed).
+    Checks explicit flags (is_forming, is_closed) and live elapsed timestamp.
+    """
+    if candle.get("is_forming") is True or candle.get("is_closed") is False or candle.get("closed") is False:
+        return True
+
+    ts_val = candle.get("timestamp") or candle.get("time") or candle.get("datetime")
+    if not ts_val:
+        return False
+
+    try:
+        if isinstance(ts_val, (int, float)):
+            c_ts = float(ts_val)
+            if c_ts > 1e11:
+                c_ts /= 1000.0
+        elif isinstance(ts_val, str):
+            clean_str = ts_val.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(clean_str)
+            c_ts = dt.timestamp()
+        else:
+            return False
+
+        now_ts = datetime.now(timezone.utc).timestamp()
+        elapsed = now_ts - c_ts
+        # If elapsed time since candle start is strictly less than interval duration, it is still forming
+        return 0 <= elapsed < interval_sec
+    except Exception:
+        return False
+
 
 
 def _score_rsi_advanced(closes: np.ndarray, rsi_val: float) -> tuple[float, str, list, list]:
@@ -367,26 +425,40 @@ def _score_patterns_with_context(patterns: list, sr_pos: str, ema_sig: str) -> t
 
 def generate_signal(
     candles: list[dict],
+    interval: str = "5min",
+    symbol: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
 ) -> dict:
     """
     Main signal generation function with Binomo Strategy Guide Confluence Matrix.
+    Uses closed candles only: drops forming candle before analysis.
 
     Args:
         candles: list of OHLCV dicts with keys: open, high, low, close, volume, timestamp
+        interval: time interval string ("1min", "5min", "15min")
+        symbol: asset symbol string (e.g. "EUR/USD")
 
     Returns:
         Enhanced Signal dict with direction, confidence, accurate entry timing, and indicators.
     """
+    interval_sec = 60 if interval == "1min" else (900 if interval == "15min" else 300)
+
+    # Use closed candles only: if the last candle is still forming, drop it before analysis
+    candles = list(candles)
+    if candles and _is_candle_forming(candles[-1], interval_sec):
+        candles = candles[:-1]
+
     if len(candles) < MIN_CANDLES:
         return {
             "direction": "WAIT",
             "confidence": 0,
             "trade_quality": "INSUFFICIENT DATA",
-            "reason": f"Need at least {MIN_CANDLES} candles to calculate indicators accurately.",
+            "reason": f"Need at least {MIN_CANDLES} closed candles to calculate indicators accurately.",
             "disclaimer": "Signal based on technical analysis only. Not financial advice.",
         }
+
+    active_symbol = symbol or (candles[-1].get("symbol") if candles and "symbol" in candles[-1] else "EUR/USD")
 
     # ── Extract series arrays ───────────────────────────────────────────────────
     highs = np.array([c["high"] for c in candles], dtype=float)
@@ -523,9 +595,10 @@ def generate_signal(
         trend_direction = -1
 
     # ── ATR VOLATILITY FILTER ─────────────────────────────────────────────────
+    dead_threshold = get_dead_market_threshold(active_symbol)
     avg_price = float(np.mean(closes[-20:]))
     atr_pct = (atr_val / avg_price * 100) if not math.isnan(atr_val) and avg_price > 0 else 0
-    is_dead_market = atr_pct < 0.002
+    is_dead_market = atr_pct < dead_threshold
 
     # ── PRICE ACTION MOMENTUM (Last 3 candles consistency) ───────────────────
     if len(closes) >= 4:
@@ -539,8 +612,8 @@ def generate_signal(
     if is_dead_market:
         direction = "WAIT"
         trade_quality = "DEAD MARKET"
-        quality_label = "Ultra-low volatility — Market flat, signals paused"
-        all_bear_reasons.append("⚠️ ATR below threshold — low volatility consolidation")
+        quality_label = f"Ultra-low volatility ({atr_pct:.4f}% < {dead_threshold}%) — Market flat, signals paused"
+        all_bear_reasons.append(f"⚠️ ATR {atr_pct:.4f}% below {dead_threshold}% threshold — low volatility consolidation")
     elif has_strong_conflict:
         direction = "WAIT"
         trade_quality = "CHOPPY / CONFLICTING"
@@ -640,16 +713,26 @@ def generate_signal(
         "reasons": {"bullish": all_bull_reasons[:3], "bearish": all_bear_reasons[:3]},
     }
 
-    gemini_result = evaluate_with_gemini(
-        symbol=candles[-1].get("symbol", "EUR/USD") if candles else "EUR/USD",
-        interval="5min",
-        recent_candles=candles[-10:],
-        indicators=indicators_snapshot,
-        patterns=patterns,
-        math_signal=initial_math_signal,
-        gemini_key=gemini_api_key,
-        openai_key=openai_api_key,
-    )
+    llm_arbiter_enabled = os.getenv("LLM_ARBITER", "false").lower() in ("true", "1", "yes", "on")
+    if llm_arbiter_enabled:
+        gemini_result = evaluate_with_gemini(
+            symbol=active_symbol,
+            interval=interval,
+            recent_candles=candles[-10:],
+            indicators=indicators_snapshot,
+            patterns=patterns,
+            math_signal=initial_math_signal,
+            gemini_key=gemini_api_key,
+            openai_key=openai_api_key,
+        )
+    else:
+        gemini_result = {
+            "status": "disabled",
+            "message": "LLM Arbiter disabled (LLM_ARBITER=off)",
+            "direction": "WAIT",
+            "confidence": 0,
+            "approved": True,
+        }
 
     if gemini_result.get("status") == "active":
         gemini_dir = gemini_result.get("direction")
@@ -666,10 +749,11 @@ def generate_signal(
             trade_quality = f"{provider_name.upper()} TRAP VETO"
             all_bear_reasons.append(f"🤖 {provider_name} Trap Veto: {gemini_result.get('analysis_en')}")
         elif direction != "WAIT" and gemini_dir != "WAIT" and gemini_dir != direction:
+            original_direction = direction
             direction = "WAIT"
             trade_quality = f"{provider_name.upper()} CONFLICT VETO"
             all_bear_reasons.append(
-                f"🤖 {provider_name} Conflict Veto: Algorithmic signal was {direction} but AI detected opposing momentum ({gemini_dir})."
+                f"🤖 {provider_name} Conflict Veto: Algorithmic signal was {original_direction} but AI detected opposing momentum ({gemini_dir})."
             )
         elif direction != "WAIT" and gemini_dir == direction:
             confidence = round((confidence * 0.5) + (gemini_conf * 0.5), 1)
@@ -678,11 +762,11 @@ def generate_signal(
 
     # ── Exact Entry Timing & Horizon Information ──────────────────────────────
     entry_timing_info = {
-        "rule_en": "Enter trade at the OPEN of the NEXT 5-minute candle within the first 10-15 seconds.",
-        "rule_hi": "Agli 5-minute candle shuru hote hi pehle 10-15 seconds me trade lein (Candle Open Entry).",
+        "rule_en": f"Enter trade at the OPEN of the NEXT {interval} candle within the first 10-15 seconds.",
+        "rule_hi": f"Agli {interval} candle shuru hote hi pehle 10-15 seconds me trade lein (Candle Open Entry).",
         "recommended_action": f"Take {direction} trade on next candle open" if direction != "WAIT" else "Wait. No confirmed tradeable setup at this moment.",
         "entry_window": "First 15 seconds of candle open (00:00 - 00:15)",
-        "expiry_duration": "5 Minutes (Fixed M5 expiry)",
+        "expiry_duration": f"{interval} (Fixed expiry)",
         "confluence_count": confluence_count,
         "quality_tier": trade_quality,
         "quality_label": quality_label,
