@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 import type { Signal } from '../../types';
+import { getOpenRouterConfig, saveOpenRouterConfig } from '../../services/api';
 import ConfidenceBar from './ConfidenceBar';
 
 interface SignalCardProps {
@@ -17,6 +18,9 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
     return intervalSecs - (now % intervalSecs);
   });
   const [showBinomoModal, setShowBinomoModal] = useState<boolean>(false);
+  const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
+  const [orKeyInput, setOrKeyInput] = useState<string>(() => getOpenRouterConfig().apiKey);
+  const [keySavedToast, setKeySavedToast] = useState<boolean>(false);
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -63,8 +67,8 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
           <span className="text-2xl">⚡</span>
         </div>
         <div className="text-center">
-          <p className="text-gray-300 text-sm font-semibold">Generating Live AI Signal...</p>
-          <p className="text-gray-500 text-xs mt-1">Live market candles & signals auto-refresh every 10 seconds</p>
+          <p className="text-gray-300 text-sm font-semibold">Generating Live OpenRouter AI Signal...</p>
+          <p className="text-gray-500 text-xs mt-1">Live market candles &amp; signals auto-refresh every 5 seconds</p>
         </div>
       </div>
     );
@@ -258,81 +262,151 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
       </div>
 
       {/* ────────────────────────────────────────────────────────── */}
-      {/* 🤖 GEMINI & CHATGPT AI ARBITER (Trap Detection & Cross-Verification) */}
+      {/* 🤖 OPENROUTER AI ANALYSIS (Sole LLM UP/DOWN Engine)        */}
       {/* ────────────────────────────────────────────────────────── */}
       <div className="w-full bg-gray-950/90 border border-blue-900/40 rounded-xl p-3.5 flex flex-col gap-2.5 relative overflow-hidden">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="flex h-2.5 w-2.5 relative">
               <span
                 className={clsx(
                   'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
-                  signal.gemini_arbiter?.status === 'active' ? 'bg-emerald-400' : 'bg-blue-400'
+                  signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached'
+                    ? 'bg-emerald-400'
+                    : signal.ai_arbiter?.status === 'disabled'
+                    ? 'bg-amber-400'
+                    : 'bg-blue-400'
                 )}
               />
               <span
                 className={clsx(
                   'relative inline-flex rounded-full h-2.5 w-2.5',
-                  signal.gemini_arbiter?.status === 'active' ? 'bg-emerald-500' : 'bg-blue-500'
+                  signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached'
+                    ? 'bg-emerald-500'
+                    : signal.ai_arbiter?.status === 'disabled'
+                    ? 'bg-amber-500'
+                    : 'bg-blue-500'
                 )}
               />
             </span>
             <span className="text-xs font-bold text-gray-200">
-              🤖 AI Arbiter (Gemini 1.5 / GPT-4o-mini)
+              🤖 OpenRouter AI (Sole LLM UP/DOWN)
             </span>
           </div>
-          <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60">
-            Backend Integrated
+          <span
+            className={clsx(
+              'text-[10px] font-semibold px-2 py-0.5 rounded border',
+              signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached'
+                ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800/60'
+                : signal.ai_arbiter?.status === 'disabled'
+                ? 'text-amber-300 bg-amber-950/60 border-amber-700/60'
+                : 'text-blue-300 bg-blue-950/60 border-blue-800/60'
+            )}
+          >
+            {signal.ai_arbiter?.status === 'active'
+              ? 'OpenRouter Live'
+              : signal.ai_arbiter?.status === 'cached'
+              ? 'OpenRouter Cached'
+              : signal.ai_arbiter?.status === 'disabled'
+              ? 'Key Required'
+              : 'Quant Fallback'}
           </span>
         </div>
 
-        {signal.gemini_arbiter?.status === 'active' ? (
+        {(signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached') ? (
           <div className="space-y-2 mt-0.5">
             <div className="flex items-center justify-between flex-wrap gap-1">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span
                   className={clsx(
                     'text-[10px] font-extrabold px-2 py-0.5 rounded-full border',
-                    signal.gemini_arbiter.trap_risk === 'LOW'
+                    signal.ai_arbiter.direction === 'CALL'
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                      : signal.gemini_arbiter.trap_risk === 'MEDIUM'
+                      : signal.ai_arbiter.direction === 'PUT'
+                      ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  )}
+                >
+                  AI Call: {signal.ai_arbiter.direction === 'CALL' ? 'UP ▲' : signal.ai_arbiter.direction === 'PUT' ? 'DOWN ▼' : 'WAIT ⏸'}
+                </span>
+                <span
+                  className={clsx(
+                    'text-[10px] font-extrabold px-2 py-0.5 rounded-full border',
+                    signal.ai_arbiter.trap_risk === 'LOW'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : signal.ai_arbiter.trap_risk === 'MEDIUM'
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                       : 'bg-red-500/20 text-red-300 border-red-500/40'
                   )}
                 >
-                  🛡️ TRAP RISK: {signal.gemini_arbiter.trap_risk}
+                  🛡️ TRAP RISK: {signal.ai_arbiter.trap_risk}
                 </span>
                 <span className="text-[10px] text-gray-400 font-mono">
-                  via {signal.gemini_arbiter.provider === 'openai' ? 'OpenAI GPT' : 'Google Gemini'}
+                  via {signal.ai_arbiter.model || 'OpenRouter'}
                 </span>
               </div>
               <span className="text-[11px] font-bold text-emerald-400">
-                AI Confidence: {signal.gemini_arbiter.confidence}%
+                AI Confidence: {signal.ai_arbiter.confidence}%
               </span>
             </div>
 
-            {/* Hindi Reason */}
-            {signal.gemini_arbiter.analysis_hi && (
+            {/* Hindi / Hinglish Reason */}
+            {signal.ai_arbiter.analysis_hi && (
               <p className="text-xs text-gray-300 bg-gray-900/80 p-2.5 rounded-lg border border-gray-800">
-                💬 <b>AI Analysis:</b> {signal.gemini_arbiter.analysis_hi}
+                💬 <b>OpenRouter Analysis:</b> {signal.ai_arbiter.analysis_hi}
               </p>
             )}
             {/* English Reason */}
-            {signal.gemini_arbiter.analysis_en && (
+            {signal.ai_arbiter.analysis_en && (
               <p className="text-[11px] text-gray-400 italic">
-                {signal.gemini_arbiter.analysis_en}
+                {signal.ai_arbiter.analysis_en}
               </p>
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-between gap-2 bg-gray-900/60 p-2 rounded-lg border border-gray-800 text-xs">
-            <div className="text-gray-300 flex items-center gap-2">
-              <span className="text-emerald-400 font-semibold">⚡ Permanent Backend AI Active:</span>
-              <span className="text-gray-400 text-[11px]">Real-time confluence & trap detection verified</span>
+          <div className="flex flex-col gap-2 bg-gray-900/60 p-2.5 rounded-lg border border-gray-800 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-gray-300">
+                <span className="text-blue-400 font-semibold">
+                  {signal.ai_arbiter?.status === 'disabled'
+                    ? '🔑 OpenRouter Key Not Set:'
+                    : '⚡ Quant UP/DOWN Active:'}
+                </span>{' '}
+                <span className="text-gray-400 text-[11px]">
+                  {signal.ai_arbiter?.analysis_hi || signal.ai_arbiter?.error || 'Paste OpenRouter API key in AI Setup to enable LLM UP/DOWN predictions.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKeyInput((v) => !v)}
+                className="text-[10px] text-blue-300 font-semibold bg-blue-950/70 border border-blue-700/60 px-2 py-1 rounded hover:bg-blue-900/70 flex-shrink-0"
+              >
+                {showKeyInput ? 'Close' : 'Set Key'}
+              </button>
             </div>
-            <span className="text-[10px] text-gray-400 font-mono bg-gray-800 px-1.5 py-0.5 rounded">
-              Ready
-            </span>
+            {showKeyInput && (
+              <div className="flex items-center gap-1.5 pt-1 border-t border-gray-800">
+                <input
+                  type="password"
+                  value={orKeyInput}
+                  onChange={(e) => setOrKeyInput(e.target.value)}
+                  placeholder="sk-or-v1-..."
+                  className="flex-1 bg-gray-950 border border-gray-700 rounded px-2 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveOpenRouterConfig(orKeyInput, getOpenRouterConfig().model);
+                    setKeySavedToast(true);
+                    setShowKeyInput(false);
+                    setTimeout(() => setKeySavedToast(false), 2500);
+                  }}
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded"
+                >
+                  {keySavedToast ? 'Saved ✓' : 'Activate'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -174,7 +174,7 @@ const CandlestickChart: React.FC = () => {
     // EMA9 line (visible in AI Pro mode)
     const ema9Series = chart.addLineSeries({
       color: CHART_COLORS.ema9,
-      lineWidth: 1.5,
+      lineWidth: 2,
       title: 'EMA9',
       priceLineVisible: false,
       lastValueVisible: false,
@@ -185,7 +185,7 @@ const CandlestickChart: React.FC = () => {
     // EMA21 line (visible in AI Pro mode)
     const ema21Series = chart.addLineSeries({
       color: CHART_COLORS.ema21,
-      lineWidth: 1.5,
+      lineWidth: 2,
       title: 'EMA21',
       priceLineVisible: false,
       lastValueVisible: false,

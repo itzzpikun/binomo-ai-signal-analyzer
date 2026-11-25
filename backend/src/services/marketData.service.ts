@@ -379,12 +379,101 @@ async function fetchCryptoPrice(symbol: string): Promise<number | null> {
   return null;
 }
 
+async function fetchYahooForexCandles(
+  symbol: string,
+  interval: string,
+  outputsize: number
+): Promise<OHLCCandle[] | null> {
+  const sym = symbol.toUpperCase().trim();
+  let yahooSym: string | null = null;
+  if (sym === 'GOLD' || sym === 'XAU/USD') {
+    yahooSym = 'GC=F';
+  } else if (/^[A-Z]{3}\/[A-Z]{3}$/.test(sym)) {
+    yahooSym = sym.replace('/', '') + '=X';
+  }
+  if (!yahooSym) return null;
+
+  const yInterval = interval === '1min' ? '1m' : interval === '15min' ? '15m' : '5m';
+  const yRange = interval === '1min' ? '1d' : '5d';
+
+  for (const host of ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com']) {
+    try {
+      const res = await axios.get(`${host}/v8/finance/chart/${yahooSym}`, {
+        params: { interval: yInterval, range: yRange },
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        timeout: 6000,
+      });
+      const result = res.data?.chart?.result?.[0];
+      const timestamps: number[] = result?.timestamp || [];
+      const quote = result?.indicators?.quote?.[0];
+      if (!timestamps.length || !quote) continue;
+
+      const candles: OHLCCandle[] = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        const o = quote.open?.[i];
+        const h = quote.high?.[i];
+        const l = quote.low?.[i];
+        const c = quote.close?.[i];
+        if (
+          typeof o !== 'number' || !Number.isFinite(o) || o <= 0 ||
+          typeof h !== 'number' || !Number.isFinite(h) || h <= 0 ||
+          typeof l !== 'number' || !Number.isFinite(l) || l <= 0 ||
+          typeof c !== 'number' || !Number.isFinite(c) || c <= 0
+        ) {
+          continue;
+        }
+        candles.push({
+          timestamp: new Date(timestamps[i] * 1000).toISOString(),
+          open: formatPriceValue(o),
+          high: formatPriceValue(Math.max(h, o, c)),
+          low: formatPriceValue(Math.min(l, o, c)),
+          close: formatPriceValue(c),
+          volume: typeof quote.volume?.[i] === 'number' && Number.isFinite(quote.volume[i]) ? quote.volume[i] : 0,
+          source: 'real',
+        });
+      }
+
+      if (candles.length >= 15) {
+        return candles.slice(-outputsize);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+async function fetchYahooPrice(symbol: string): Promise<number | null> {
+  const sym = symbol.toUpperCase().trim();
+  const yahooSym = (sym === 'GOLD' || sym === 'XAU/USD')
+    ? 'GC=F'
+    : (/^[A-Z]{3}\/[A-Z]{3}$/.test(sym) ? sym.replace('/', '') + '=X' : null);
+  if (!yahooSym) return null;
+
+  try {
+    const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}`, {
+      params: { interval: '1m', range: '1d' },
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 5000,
+    });
+    const metaPrice = res.data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+    if (typeof metaPrice === 'number' && Number.isFinite(metaPrice) && metaPrice > 0) {
+      return formatPriceValue(metaPrice);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 function dataUnavailable(message: string): never {
   const err = new Error(message) as Error & { statusCode: number; status: string };
   err.statusCode = 503;
   err.status = 'DATA_UNAVAILABLE';
   throw err;
 }
+
+let twelveDataCooldownUntil = 0;
 
 export const marketDataService = {
   isOtc(symbol: string): boolean {
@@ -429,7 +518,8 @@ export const marketDataService = {
     symbol: string,
     interval = '5min',
     outputsize = 100,
-    customApiKey?: string
+    customApiKey?: string,
+    options?: { skipTwelveData?: boolean }
   ): Promise<OHLCCandle[]> {
     const sym = symbol.toUpperCase();
     this.validateSymbol(sym);
@@ -448,71 +538,80 @@ export const marketDataService = {
       }
     }
 
-    // Real Forex, Commodities, Indices via Twelve Data
+    // Real Forex, Commodities, Indices via Twelve Data (primary) -> Yahoo Finance (real fallback) -> simulated
     const activeKey = customApiKey || ENV.TWELVE_DATA_API_KEY;
-
-    if (!hasApiKey(activeKey)) {
-      return generateLiveBinomoCandles(sym, interval, outputsize);
-    }
-
-    const cacheKey = `candles:${sym}:${interval}:${outputsize}:${activeKey?.slice(-4) || 'default'}`;
+    const cacheTTL = interval === '1min' ? 45 : interval === '5min' ? 120 : 300;
+    const cacheKey = `candles:${sym}:${interval}:${outputsize}:${customApiKey ? customApiKey.slice(-4) : 'default'}`;
     const cached = cacheService.get<OHLCCandle[]>(cacheKey);
     if (cached) return cached;
 
-    try {
-      const response = await axios.get(`${TWELVE_DATA_BASE}/time_series`, {
-        params: {
-          symbol: sym,
-          interval,
-          outputsize,
-          format: 'JSON',
-          apikey: activeKey,
-        },
-        timeout: 8000,
-      });
+    if (!options?.skipTwelveData && hasApiKey(activeKey) && Date.now() >= twelveDataCooldownUntil) {
+      try {
+        const response = await axios.get(`${TWELVE_DATA_BASE}/time_series`, {
+          params: {
+            symbol: sym,
+            interval,
+            outputsize,
+            format: 'JSON',
+            apikey: activeKey,
+          },
+          timeout: 8000,
+        });
 
-      const body = response.data as {
-        status?: string;
-        code?: number;
-        message?: string;
-        values?: Array<{
-          datetime: string;
-          open: string;
-          high: string;
-          low: string;
-          close: string;
-          volume: string;
-        }>;
-      };
+        const body = response.data as {
+          status?: string;
+          code?: number;
+          message?: string;
+          values?: Array<{
+            datetime: string;
+            open: string;
+            high: string;
+            low: string;
+            close: string;
+            volume: string;
+          }>;
+        };
 
-      if (body.status === 'error' || body.code || !body.values || body.values.length === 0) {
-        const simCandles = generateLiveBinomoCandles(sym, interval, outputsize);
-        cacheService.set(cacheKey, simCandles, 30);
-        return simCandles;
+        if (body.code === 429 || body.message?.toLowerCase().includes('credits') || body.message?.toLowerCase().includes('limit')) {
+          twelveDataCooldownUntil = Date.now() + 300_000; // 5 min cooldown to stop burning quota
+        } else if (body.status !== 'error' && !body.code && body.values && body.values.length > 0) {
+          const candles: OHLCCandle[] = body.values.reverse().map((v) => ({
+            timestamp: v.datetime,
+            open: formatPriceValue(parseFloat(v.open)),
+            high: formatPriceValue(parseFloat(v.high)),
+            low: formatPriceValue(parseFloat(v.low)),
+            close: formatPriceValue(parseFloat(v.close)),
+            volume: parseFloat(v.volume ?? '0'),
+            source: 'real',
+          }));
+          cacheService.set(cacheKey, candles, cacheTTL);
+          return candles;
+        }
+      } catch (err) {
+        const status = (err as AxiosError)?.response?.status;
+        if (status === 429) {
+          twelveDataCooldownUntil = Date.now() + 300_000;
+        }
       }
-
-      // Twelve Data returns newest first — reverse to chronological order
-      const candles: OHLCCandle[] = body.values.reverse().map((v) => ({
-        timestamp: v.datetime,
-        open: formatPriceValue(parseFloat(v.open)),
-        high: formatPriceValue(parseFloat(v.high)),
-        low: formatPriceValue(parseFloat(v.low)),
-        close: formatPriceValue(parseFloat(v.close)),
-        volume: parseFloat(v.volume ?? '0'),
-        source: 'real',
-      }));
-
-      // Cache for interval duration
-      const cacheTTL = interval === '1min' ? 60 : interval === '5min' ? 300 : 900;
-      cacheService.set(cacheKey, candles, cacheTTL);
-
-      return candles;
-    } catch {
-      // Fallback gracefully to simulated Binomo live candles
-      const simCandles = generateLiveBinomoCandles(sym, interval, outputsize);
-      cacheService.set(cacheKey, simCandles, 30);
-      return simCandles;
     }
+
+    // Secondary REAL feed via Yahoo Finance (genuine OHLCV market candles, no API key cap)
+    const yahooCacheKey = `yahoo:candles:${sym}:${interval}`;
+    const cachedYahoo = cacheService.get<OHLCCandle[]>(yahooCacheKey);
+    if (cachedYahoo && cachedYahoo.length > 0) {
+      return cachedYahoo.slice(-outputsize);
+    }
+
+    const yahooCandles = await fetchYahooForexCandles(sym, interval, Math.max(outputsize, 200));
+    if (yahooCandles && yahooCandles.length > 0) {
+      cacheService.set(yahooCacheKey, yahooCandles, cacheTTL);
+      return yahooCandles.slice(-outputsize);
+    }
+
+    // Final graceful fallback to simulated Binomo candles so UI never stalls on DATA UNAVAILABLE
+    const simCandles = generateLiveBinomoCandles(sym, interval, outputsize);
+    cacheService.set(cacheKey, simCandles, 30);
+    return simCandles;
   },
 
   async getCurrentPrice(symbol: string, customApiKey?: string): Promise<number> {
@@ -533,42 +632,54 @@ export const marketDataService = {
 
     const activeKey = customApiKey || ENV.TWELVE_DATA_API_KEY;
 
-    if (!hasApiKey(activeKey)) {
-      const simCandles = generateLiveBinomoCandles(sym, '1min', 2);
-      return simCandles[simCandles.length - 1].close;
-    }
-
     const cacheKey = `price:${sym}`;
     const cached = cacheService.get<number>(cacheKey);
     if (cached !== null) return cached;
 
-    // Check recent cached candles
+    // Check recent cached candles first (saves Twelve Data quota)
     for (const tf of ['5min', '1min', '15min']) {
-      for (const size of [100, 50, 30]) {
-        const cachedCandles = cacheService.get<OHLCCandle[]>(`candles:${sym}:${tf}:${size}:${activeKey?.slice(-4) || 'default'}`);
-        if (cachedCandles && cachedCandles.length > 0) {
-          const latestPrice = cachedCandles[cachedCandles.length - 1].close;
+      const cachedY = cacheService.get<OHLCCandle[]>(`yahoo:candles:${sym}:${tf}`);
+      if (cachedY && cachedY.length > 0) {
+        const latestPrice = cachedY[cachedY.length - 1].close;
+        cacheService.set(cacheKey, latestPrice, 15);
+        return latestPrice;
+      }
+      for (const size of [100, 50, 40, 30]) {
+        const cachedTd = cacheService.get<OHLCCandle[]>(`candles:${sym}:${tf}:${size}:${customApiKey ? customApiKey.slice(-4) : 'default'}`);
+        if (cachedTd && cachedTd.length > 0) {
+          const latestPrice = cachedTd[cachedTd.length - 1].close;
           cacheService.set(cacheKey, latestPrice, 15);
           return latestPrice;
         }
       }
     }
 
-    try {
-      const response = await axios.get(`${TWELVE_DATA_BASE}/price`, {
-        params: { symbol: sym, apikey: activeKey },
-        timeout: 6000,
-      });
+    if (hasApiKey(activeKey) && Date.now() >= twelveDataCooldownUntil) {
+      try {
+        const response = await axios.get(`${TWELVE_DATA_BASE}/price`, {
+          params: { symbol: sym, apikey: activeKey },
+          timeout: 6000,
+        });
 
-      const body = response.data as { price?: string; code?: number; message?: string };
-
-      if (body.price && !body.code) {
-        const price = formatPriceValue(parseFloat(body.price!));
-        cacheService.set(cacheKey, price, 30);
-        return price;
+        const body = response.data as { price?: string; code?: number; message?: string };
+        if (body.code === 429) {
+          twelveDataCooldownUntil = Date.now() + 300_000;
+        } else if (body.price && !body.code) {
+          const price = formatPriceValue(parseFloat(body.price));
+          cacheService.set(cacheKey, price, 30);
+          return price;
+        }
+      } catch (err) {
+        if ((err as AxiosError)?.response?.status === 429) {
+          twelveDataCooldownUntil = Date.now() + 300_000;
+        }
       }
-    } catch {
-      // Fallback
+    }
+
+    const yahooPrice = await fetchYahooPrice(sym);
+    if (yahooPrice !== null) {
+      cacheService.set(cacheKey, yahooPrice, 20);
+      return yahooPrice;
     }
 
     const simCandles = generateLiveBinomoCandles(sym, '1min', 2);

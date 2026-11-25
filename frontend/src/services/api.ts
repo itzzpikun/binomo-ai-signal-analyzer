@@ -7,6 +7,8 @@ import type {
   BacktestResult,
   PerformanceSummary,
   TimeInterval,
+  Trade,
+  RiskStatus,
 } from '../types';
 
 // In production (served from Express), VITE_API_URL is empty → relative URLs (same origin)
@@ -15,16 +17,36 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 const apiClient = axios.create({
   baseURL: API_BASE,
-  timeout: 30000,
+  timeout: 45000, // Generous timeout for Render free-tier cold starts (~30-60s)
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Response interceptor for error handling
+// Retry wrapper — retries up to 3 times with exponential backoff on network/timeout errors
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const config = error.config;
+    if (!config) return Promise.reject(error);
+
+    config.__retryCount = config.__retryCount || 0;
+
+    // Retry on network errors, timeouts, 502/503/504 (Render cold start)
+    const isRetryable =
+      !error.response ||
+      [502, 503, 504].includes(error.response?.status);
+
+    if (isRetryable && config.__retryCount < 3) {
+      config.__retryCount += 1;
+      const delay = Math.min(1000 * Math.pow(2, config.__retryCount - 1), 5000);
+      console.log(`[API] Retry ${config.__retryCount}/3 after ${delay}ms...`);
+      await sleep(delay);
+      return apiClient(config);
+    }
+
     if (error.response) {
       return Promise.reject(error.response.data);
     }
@@ -115,6 +137,42 @@ export interface SignalHistoryResponse {
   total: number;
 }
 
+export interface OpenRouterClientConfig {
+  apiKey: string;
+  model: string;
+}
+
+export const OPENROUTER_KEY_STORAGE = 'openrouter_api_key';
+export const OPENROUTER_MODEL_STORAGE = 'openrouter_model';
+
+export const getOpenRouterConfig = (): OpenRouterClientConfig => {
+  if (typeof window === 'undefined') return { apiKey: '', model: 'openrouter/free' };
+  return {
+    apiKey: (localStorage.getItem(OPENROUTER_KEY_STORAGE) || '').trim(),
+    model: (localStorage.getItem(OPENROUTER_MODEL_STORAGE) || 'openrouter/free').trim(),
+  };
+};
+
+export const saveOpenRouterConfig = (apiKey: string, model: string): void => {
+  if (typeof window === 'undefined') return;
+  const trimmedKey = apiKey.trim();
+  const trimmedModel = model.trim() || 'openrouter/free';
+  if (trimmedKey) {
+    localStorage.setItem(OPENROUTER_KEY_STORAGE, trimmedKey);
+  } else {
+    localStorage.removeItem(OPENROUTER_KEY_STORAGE);
+  }
+  localStorage.setItem(OPENROUTER_MODEL_STORAGE, trimmedModel);
+};
+
+export const getAiHealth = async (): Promise<{
+  ai?: { provider: string; configured: boolean; model: string };
+  services?: { ai_engine: string };
+}> => {
+  const response = await apiClient.get('/health');
+  return response.data;
+};
+
 export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal> => {
   // Ensure every candle has an ISO timestamp string required by the backend and AI engine
   const formattedCandles = params.candles.map((c) => ({
@@ -128,13 +186,20 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     volume: Number(c.volume || 0),
   }));
 
+  const { apiKey, model } = getOpenRouterConfig();
+  const headers: Record<string, string> = {};
+  if (apiKey) headers['X-OpenRouter-Key'] = apiKey;
+  if (model) headers['X-OpenRouter-Model'] = model;
+
   const response = await apiClient.post(
     '/api/signal/analyze',
     {
       symbol: params.symbol,
       interval: params.interval,
       candles: formattedCandles,
-    }
+      ...(model ? { openrouter_model: model } : {}),
+    },
+    { headers }
   );
 
   const data = response.data;
@@ -153,7 +218,7 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     trade_quality: sig.trade_quality,
     entry_timing: sig.entry_timing,
     confluence_score: sig.confluence_score,
-    gemini_arbiter: sig.gemini_arbiter,
+    ai_arbiter: sig.ai_arbiter,
     source: data.source || sig.source,
   };
 };

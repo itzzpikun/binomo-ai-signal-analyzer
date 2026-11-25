@@ -13,28 +13,36 @@ export const signalService = {
     symbol: string,
     interval: string,
     candles: OHLCCandle[],
-    geminiKey?: string,
-    openaiKey?: string
+    openrouterKey?: string,
+    openrouterModel?: string,
+    skipLlm = false
   ): Promise<SignalResult> {
     try {
+      const resolvedKey = openrouterKey || ENV.OPENROUTER_API_KEY || undefined;
+      const resolvedModel = openrouterModel || ENV.OPENROUTER_MODEL || undefined;
       const response = await axios.post(
         `${ENV.AI_ENGINE_URL}/analyze`,
         {
           symbol,
           interval,
           candles,
-          gemini_api_key: geminiKey,
-          openai_api_key: openaiKey,
+          skip_llm: skipLlm,
+          ...(resolvedKey ? { openrouter_api_key: resolvedKey } : {}),
+          ...(resolvedModel ? { openrouter_model: resolvedModel } : {}),
         },
         {
           timeout: 30000,
           headers: {
             'Content-Type': 'application/json',
-            ...(geminiKey ? { 'X-Gemini-Key': geminiKey } : {}),
-            ...(openaiKey ? { 'X-OpenAI-Key': openaiKey } : {}),
+            ...(resolvedKey ? { 'X-OpenRouter-Key': resolvedKey } : {}),
+            ...(resolvedModel ? { 'X-OpenRouter-Model': resolvedModel } : {}),
           },
         }
       );
+      if (typeof response.data === 'string') {
+        const sanitized = response.data.replace(/:\s*(?:NaN|-?Infinity)\b/g, ': null');
+        return JSON.parse(sanitized) as SignalResult;
+      }
       return response.data as SignalResult;
     } catch (err) {
       const axiosErr = err as AxiosError;

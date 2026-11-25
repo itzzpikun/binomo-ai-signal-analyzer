@@ -13,7 +13,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from analysis.signal_engine import generate_signal
+from analysis.signal_engine import generate_signal, sanitize_for_json
+from analysis.openrouter_arbiter import evaluate_with_openrouter
 from analysis.backtest import run_backtest
 from utils.validators import (
     validate_analyze_request,
@@ -53,7 +54,10 @@ def health():
             "status": "ok",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "service": "binomo-ai-engine",
-            "version": "1.0.0",
+            "version": "2.0.0",
+            "llm_provider": "openrouter",
+            "openrouter_configured": bool(os.getenv("OPENROUTER_API_KEY", "").strip()),
+            "openrouter_model": os.getenv("OPENROUTER_MODEL", "openrouter/free"),
         }
     )
 
@@ -95,24 +99,26 @@ def analyze():
         or sym_upper in ("CRYPTO_IDX", "CRYPTO IDX")
         or any(c.get("source") == "simulated" for c in cleaned["candles"])
     )
-    gemini_key = (
-        request.headers.get("X-Gemini-Key")
-        or data.get("gemini_api_key")
-        or os.getenv("GEMINI_API_KEY")
+    openrouter_key = (
+        request.headers.get("X-OpenRouter-Key")
+        or data.get("openrouter_api_key")
+        or os.getenv("OPENROUTER_API_KEY")
     )
-    openai_key = (
-        request.headers.get("X-OpenAI-Key")
-        or data.get("openai_api_key")
-        or os.getenv("OPENAI_API_KEY")
+    openrouter_model = (
+        request.headers.get("X-OpenRouter-Model")
+        or data.get("openrouter_model")
+        or os.getenv("OPENROUTER_MODEL")
     )
+    skip_llm = bool(data.get("skip_llm", False))
 
     try:
         signal = generate_signal(
             cleaned["candles"],
             interval=cleaned.get("interval", "5min"),
             symbol=cleaned.get("symbol", "EUR/USD"),
-            gemini_api_key=gemini_key,
-            openai_api_key=openai_key,
+            openrouter_api_key=openrouter_key,
+            openrouter_model=openrouter_model,
+            skip_llm=skip_llm,
         )
     except Exception as exc:
         logger.exception("Signal generation failed")
@@ -123,7 +129,7 @@ def analyze():
     signal["source"] = "simulated" if is_simulated else "real"
     if is_simulated:
         signal["trade_quality"] = f"{signal.get('trade_quality', 'CONFLUENCE')} (OTC)"
-    return jsonify(signal)
+    return jsonify(sanitize_for_json(signal))
 
 
 @app.post("/backtest")

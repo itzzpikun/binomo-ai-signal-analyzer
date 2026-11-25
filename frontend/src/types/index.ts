@@ -37,6 +37,7 @@ export interface Indicators {
 export interface SignalReasons {
   bullish: string[];
   bearish: string[];
+  wait_reasons?: string[];
 }
 
 export interface EntryTiming {
@@ -50,9 +51,9 @@ export interface EntryTiming {
   quality_label?: string;
 }
 
-export interface GeminiArbiterResult {
+export interface OpenRouterArbiterResult {
   status: 'active' | 'disabled' | 'fallback' | 'cached';
-  provider?: 'gemini' | 'openai' | 'fallback' | 'none';
+  provider?: 'openrouter' | 'fallback' | 'none';
   model?: string;
   approved: boolean;
   direction: SignalDirection;
@@ -61,6 +62,7 @@ export interface GeminiArbiterResult {
   analysis_en: string;
   analysis_hi: string;
   verdict: string;
+  error?: string;
 }
 
 export interface Signal {
@@ -77,7 +79,7 @@ export interface Signal {
   trade_quality?: string;
   entry_timing?: EntryTiming;
   confluence_score?: number;
-  gemini_arbiter?: GeminiArbiterResult;
+  ai_arbiter?: OpenRouterArbiterResult;
   source?: 'real' | 'simulated';
 }
 

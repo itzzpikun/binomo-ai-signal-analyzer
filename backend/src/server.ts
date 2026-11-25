@@ -101,10 +101,18 @@ async function bootstrap(): Promise<void> {
   // ── Enhanced Health check ────────────────────────────────
   app.get('/health', async (_req, res) => {
     let aiStatus = 'disconnected';
+    let aiHealth: Record<string, any> = {};
     try {
       const aiRes = await fetch(`${ENV.AI_ENGINE_URL}/health`, { signal: AbortSignal.timeout(1500) }).catch(() => null);
-      if (aiRes && aiRes.ok) aiStatus = 'connected';
+      if (aiRes && aiRes.ok) {
+        aiStatus = 'connected';
+        aiHealth = (await aiRes.json().catch(() => ({}))) as Record<string, any>;
+      }
     } catch {}
+
+    const openrouterConfigured = Boolean(
+      ENV.OPENROUTER_API_KEY || aiHealth.openrouter_configured
+    );
 
     res.json({
       status: 'OK',
@@ -114,6 +122,11 @@ async function bootstrap(): Promise<void> {
         frontend: frontendDist ? 'ready' : 'fallback',
         ai_engine: aiStatus,
         market_data: 'connected',
+      },
+      ai: {
+        provider: 'openrouter',
+        configured: openrouterConfigured,
+        model: ENV.OPENROUTER_MODEL || aiHealth.openrouter_model || 'openrouter/free',
       },
       timestamp: new Date().toISOString(),
     });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { useAppStore } from '../../store/appStore';
+import { getOpenRouterConfig, saveOpenRouterConfig } from '../../services/api';
 import type { Candle, Signal } from '../../types';
 
 interface BinomoCandlePredictorProps {
@@ -50,6 +51,9 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
     const now = Math.floor(Date.now() / 1000);
     return intervalSeconds - (now % intervalSeconds);
   });
+  const [showKeyForm, setShowKeyForm] = useState(false);
+  const [openrouterKeyInput, setOpenrouterKeyInput] = useState(() => getOpenRouterConfig().apiKey);
+  const [openrouterSaved, setOpenrouterSaved] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -160,27 +164,41 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
       strategyName = 'Binomo Evening Star Reversal';
       predictedDirection = 'PUT';
     }
-    // Pattern 8: Incorporate EMA 8/21 Trend Confluence from Signal if available
+    // Pattern 8: Incorporate OpenRouter AI / EMA Confluence from Signal if available
     else if (signal) {
       if (signal.direction === 'CALL') {
-        patternName = isBullish ? 'Trend Continuation (EMA 8 Pullback)' : 'Bullish Pullback Dip';
+        patternName = signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached'
+          ? 'OpenRouter AI UP Signal'
+          : isBullish ? 'Trend Continuation (EMA 8 Pullback)' : 'Bullish Pullback Dip';
         patternType = 'bullish';
-        rejectionReason = 'EMA 8/21 bullish alignment with upward momentum.';
-        strategyName = 'Binomo Strategy #1 (EMA 8 / EMA 21 Cross)';
+        rejectionReason = signal.ai_arbiter?.analysis_en || 'EMA 8/21 bullish alignment with upward momentum.';
+        strategyName = signal.ai_arbiter?.model ? `OpenRouter (${signal.ai_arbiter.model})` : 'Binomo Strategy #1 (EMA 8 / EMA 21 Cross)';
         predictedDirection = 'CALL';
       } else if (signal.direction === 'PUT') {
-        patternName = isBearish ? 'Trend Continuation (EMA 8 Drop)' : 'Bearish Pullback Peak';
+        patternName = signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached'
+          ? 'OpenRouter AI DOWN Signal'
+          : isBearish ? 'Trend Continuation (EMA 8 Drop)' : 'Bearish Pullback Peak';
         patternType = 'bearish';
-        rejectionReason = 'EMA 8/21 bearish alignment with downward momentum.';
-        strategyName = 'Binomo Strategy #1 (EMA 8 / EMA 21 Cross)';
+        rejectionReason = signal.ai_arbiter?.analysis_en || 'EMA 8/21 bearish alignment with downward momentum.';
+        strategyName = signal.ai_arbiter?.model ? `OpenRouter (${signal.ai_arbiter.model})` : 'Binomo Strategy #1 (EMA 8 / EMA 21 Cross)';
         predictedDirection = 'PUT';
       } else {
         patternName = isDoji ? 'Doji (Indecision)' : 'Consolidation Range';
         patternType = 'neutral';
-        rejectionReason = 'Market is consolidating without clear trend direction.';
-        strategyName = 'Binomo Strategy: Wait for Clear Candlestick';
+        rejectionReason = signal.ai_arbiter?.analysis_en || 'Market is consolidating without clear trend direction.';
+        strategyName = 'OpenRouter + Quant Confluence';
         predictedDirection = 'WAIT';
       }
+    }
+
+    // When OpenRouter AI actively confirms or supplies CALL/PUT for real market candles, prefer AI+Engine verdict
+    if (
+      signal &&
+      !(isSimulated || candles.some((c) => c.source === 'simulated')) &&
+      (signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached') &&
+      (signal.direction === 'CALL' || signal.direction === 'PUT')
+    ) {
+      predictedDirection = signal.direction;
     }
 
     // Strict honesty: Never output CALL/PUT from simulated data
@@ -381,7 +399,7 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
           <div className="flex items-center gap-2 text-right">
             <div className="bg-gray-950/80 px-2.5 py-1.5 rounded-lg border border-gray-800 text-right">
               <span className="text-[10px] text-gray-400 block">Recommended Expiry</span>
-              <span className="text-xs font-mono font-bold text-yellow-400">1 Min (Fixed)</span>
+              <span className="text-xs font-mono font-bold text-yellow-400">{selectedInterval} (Fixed)</span>
             </div>
             <div className="bg-gray-950/80 px-2.5 py-1.5 rounded-lg border border-gray-800 text-right">
               <span className="text-[10px] text-gray-400 block">Broker Payout</span>
@@ -390,16 +408,84 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
           </div>
         </div>
 
+        {/* OpenRouter AI Analysis Banner (Sole LLM) */}
+        <div className="bg-gray-950/90 border border-blue-900/50 rounded-lg p-2.5 flex flex-col gap-1.5 text-xs">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="font-bold text-blue-300 flex items-center gap-1.5">
+              <span>🤖</span>
+              <span>OpenRouter AI Analysis</span>
+              {signal?.ai_arbiter?.model && (signal.ai_arbiter.status === 'active' || signal.ai_arbiter.status === 'cached') && (
+                <span className="text-[10px] font-mono text-gray-400 font-normal">({signal.ai_arbiter.model})</span>
+              )}
+            </span>
+            {signal?.ai_arbiter?.status === 'active' || signal?.ai_arbiter?.status === 'cached' ? (
+              <span className={clsx(
+                'text-[10px] font-extrabold px-2 py-0.5 rounded-full border',
+                signal.ai_arbiter.direction === 'CALL'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : signal.ai_arbiter.direction === 'PUT'
+                  ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+              )}>
+                {signal.ai_arbiter.direction === 'CALL' ? 'UP ▲' : signal.ai_arbiter.direction === 'PUT' ? 'DOWN ▼' : 'WAIT ⏸'} • {signal.ai_arbiter.confidence}%
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowKeyForm((v) => !v)}
+                className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-700/60 px-2 py-0.5 rounded hover:bg-amber-900/60"
+              >
+                {signal?.ai_arbiter?.status === 'disabled' ? (showKeyForm ? 'Close' : '🔑 Add OpenRouter Key') : '⚡ Quant Active'}
+              </button>
+            )}
+          </div>
+
+          {signal?.ai_arbiter?.analysis_hi && (
+            <p className="text-[11px] text-gray-300 leading-relaxed">
+              {signal.ai_arbiter.analysis_hi}
+            </p>
+          )}
+          {signal?.ai_arbiter?.analysis_en && signal.ai_arbiter.status !== 'disabled' && (
+            <p className="text-[10px] text-gray-400 italic">
+              {signal.ai_arbiter.analysis_en}
+            </p>
+          )}
+
+          {showKeyForm && (
+            <div className="flex items-center gap-1.5 pt-1.5 border-t border-gray-800">
+              <input
+                type="password"
+                value={openrouterKeyInput}
+                onChange={(e) => setOpenrouterKeyInput(e.target.value)}
+                placeholder="Paste sk-or-v1-... API key"
+                className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  saveOpenRouterConfig(openrouterKeyInput, getOpenRouterConfig().model);
+                  setOpenrouterSaved(true);
+                  setShowKeyForm(false);
+                  setTimeout(() => setOpenrouterSaved(false), 2500);
+                }}
+                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded"
+              >
+                {openrouterSaved ? 'Saved ✓' : 'Save'}
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Hindi Action Guide Pill */}
         <div className="bg-gray-950/90 border border-gray-800/80 p-2.5 rounded-lg text-xs text-gray-200 flex items-start gap-2">
           <span className="text-base flex-shrink-0">💡</span>
           <div>
             <span className="font-bold text-yellow-400">Trading Rule: </span>
             {isCall && (
-              <span>Nayi 1-minute candle open hote hi pehle 0-10 seconds me <b>GREEN (CALL)</b> trade lein. Fixed 1M expiry rakhein.</span>
+              <span>Nayi {selectedInterval} candle open hote hi pehle 0-10 seconds me <b>GREEN (UP / CALL)</b> trade lein. Fixed {selectedInterval} expiry rakhein.</span>
             )}
             {isPut && (
-              <span>Nayi 1-minute candle open hote hi pehle 0-10 seconds me <b>RED (PUT)</b> trade lein. Fixed 1M expiry rakhein.</span>
+              <span>Nayi {selectedInterval} candle open hote hi pehle 0-10 seconds me <b>RED (DOWN / PUT)</b> trade lein. Fixed {selectedInterval} expiry rakhein.</span>
             )}
             {isWait && (
               <span>Market me abhi clear pattern nahi hai. Candle close hone ka intezaar karein aur agle confirmed signal par trade lein.</span>
@@ -443,7 +529,7 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
                 GET READY ON BINOMO! ({secondsRemaining}s Left)
               </span>
               <p className="text-amber-100/90 text-[11px] mt-0.5">
-                Candle is about to close. Open your Binomo tab, set 1-minute expiry, and prepare to press <b>{analysis.predictedDirection}</b>!
+                Candle is about to close. Open your Binomo tab, set {selectedInterval} expiry, and prepare to press <b>{analysis.predictedDirection}</b>!
               </p>
             </div>
           </div>

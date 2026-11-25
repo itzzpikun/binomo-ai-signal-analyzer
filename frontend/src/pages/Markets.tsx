@@ -3,11 +3,10 @@ import { ASSET_CATEGORIES, AssetCategory } from '../types';
 import { useAppStore } from '../store/appStore';
 import clsx from 'clsx';
 
-const categoryColors: Record<AssetCategory, string> = {
+const categoryColors: Partial<Record<AssetCategory, string>> = {
   Forex:       'text-blue-400 bg-blue-900/30 border-blue-800',
   Crypto:      'text-purple-400 bg-purple-900/30 border-purple-800',
   Commodities: 'text-amber-400 bg-amber-900/30 border-amber-800',
-  Indices:     'text-cyan-400 bg-cyan-900/30 border-cyan-800',
   'Binomo OTC': 'text-amber-400 bg-amber-900/30 border-amber-800',
 };
 

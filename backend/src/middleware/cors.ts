@@ -43,7 +43,14 @@ export const corsMiddleware = cors({
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-OpenRouter-Key',
+    'X-OpenRouter-Model',
+    'X-Market-Key',
+  ],
   credentials: true,
   maxAge: 600,
 });

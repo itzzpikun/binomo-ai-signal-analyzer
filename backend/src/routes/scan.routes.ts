@@ -16,8 +16,7 @@ interface CachedScan {
 }
 
 let scanCache: CachedScan | null = null;
-const CACHE_TTL_MS = 6000; // 6-second cache to allow super-fast multi-client polling
-let twelveDataCooldownUntil = 0;
+const CACHE_TTL_MS = 12000; // 12-second cache to prevent redundant backend work
 
 async function scanAsset(asset: {
   symbol: string;
@@ -33,21 +32,11 @@ async function scanAsset(asset: {
     if (asset.isOtc || marketDataService.isOtc(asset.symbol)) {
       candles = generateLiveBinomoCandles(asset.symbol, '5min', 40);
       source = 'simulated';
-    } else if (Date.now() < twelveDataCooldownUntil) {
-      // Twelve Data is rate limited or daily credit exhausted — use simulated candles with explicit attribution
-      candles = generateLiveBinomoCandles(asset.symbol, '5min', 40);
-      source = 'simulated';
     } else {
-      try {
-        candles = await marketDataService.getCandles(asset.symbol, '5min', 40);
-        source = candles[0]?.source || 'real';
-      } catch (err: any) {
-        if (err?.message?.includes('429') || err?.message?.includes('credits')) {
-          twelveDataCooldownUntil = Date.now() + 60_000 * 5; // 5 min cooldown
-        }
-        candles = generateLiveBinomoCandles(asset.symbol, '5min', 40);
-        source = 'simulated';
-      }
+      // Skip Twelve Data during bulk 89-asset scans so active chart keeps full quota;
+      // marketDataService uses cached Twelve Data or real Yahoo Finance / Crypto feeds.
+      candles = await marketDataService.getCandles(asset.symbol, '5min', 40, undefined, { skipTwelveData: true });
+      source = candles[0]?.source || 'real';
     }
 
     if (!candles || candles.length < 15) {
@@ -66,7 +55,8 @@ async function scanAsset(asset: {
       };
     }
 
-    const sig = await signalService.analyzeCandles(asset.symbol, '5min', candles);
+    // Pass skipLlm=true for fast quantitative confluence scanning without burning OpenRouter quota
+    const sig = await signalService.analyzeCandles(asset.symbol, '5min', candles, undefined, undefined, true);
     const confScore =
       typeof sig.confluence_score === 'number'
         ? sig.confluence_score

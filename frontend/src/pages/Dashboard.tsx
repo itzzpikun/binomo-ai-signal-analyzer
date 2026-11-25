@@ -253,7 +253,7 @@ const Dashboard: React.FC = () => {
 
   // Continuous background scanner across all assets (runs every 8s) to detect high confluence (>=75%) setups
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
 
     const runBackgroundScan = async () => {
       try {
@@ -477,7 +477,7 @@ const Dashboard: React.FC = () => {
                   <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
                   Auto-updating signal with live candles...
                 </span>
-                <span className="font-mono text-gray-400 text-[10px]">10s Live</span>
+                <span className="font-mono text-gray-400 text-[10px]">5s Live</span>
               </div>
             )}
 
@@ -505,7 +505,7 @@ const Dashboard: React.FC = () => {
           <span className="flex items-center gap-2">
             <span>Interval: {selectedInterval}</span>
             <span>•</span>
-            <span className="text-emerald-500 font-medium">Auto-Refreshing (Every 10s)</span>
+            <span className="text-emerald-500 font-medium">Auto-Refreshing (Every 5s)</span>
           </span>
           <span className="text-gray-500 text-[11px]">Synced: {lastUpdated}</span>
         </div>

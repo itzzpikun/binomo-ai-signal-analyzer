@@ -23,10 +23,12 @@ services:
       - key: TWELVE_DATA_API_KEY
         value: 68d13d3465434ad8a40d7db1eda9b8a8
         sync: false
-      - key: GEMINI_API_KEY
-        value: AIzaSyBjtP-wRmv06a2ifP3ourXe9FnElt6Pw5k
-      - key: OPENAI_API_KEY
-        value: key_49MGUQXsHZ55qVKE
+      - key: LLM_ARBITER
+        value: "true"
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openrouter/free
       - key: AI_ENGINE_URL
         fromService:
           type: web

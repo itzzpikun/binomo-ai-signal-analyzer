@@ -37,24 +37,34 @@ export const signalController = {
         source: isSimulated ? 'simulated' : (c.source || 'real'),
       }));
 
-      const geminiKey =
-        (req.headers['x-gemini-key'] as string) ||
-        (req.body as any).gemini_api_key ||
-        process.env.GEMINI_API_KEY;
-      const openaiKey =
-        (req.headers['x-openai-key'] as string) ||
-        (req.body as any).openai_api_key ||
-        process.env.OPENAI_API_KEY;
+      const openrouterKey =
+        (req.headers['x-openrouter-key'] as string) ||
+        (req.body as any).openrouter_api_key ||
+        process.env.OPENROUTER_API_KEY ||
+        undefined;
+      const openrouterModel =
+        (req.headers['x-openrouter-model'] as string) ||
+        (req.body as any).openrouter_model ||
+        process.env.OPENROUTER_MODEL ||
+        undefined;
 
       const result = await signalService.analyzeCandles(
         symbol,
         interval,
         sanitizedCandles,
-        geminiKey,
-        openaiKey
+        openrouterKey,
+        openrouterModel,
+        false
       );
 
-      const rawResult: any = result || {};
+      let rawResult: any = result || {};
+      if (typeof rawResult === 'string') {
+        try {
+          rawResult = JSON.parse(rawResult.replace(/:\s*(?:NaN|-?Infinity)\b/g, ': null'));
+        } catch {
+          rawResult = {};
+        }
+      }
       const finalSignal: any = {
         ...rawResult,
         source: isSimulated ? 'simulated' : 'real',

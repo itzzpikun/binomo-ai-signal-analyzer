@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import clsx from 'clsx';
+import {
+  getOpenRouterConfig,
+  saveOpenRouterConfig,
+  getAiHealth,
+} from '../services/api';
 
 interface IndicatorConfig {
   id: string;
@@ -72,6 +77,13 @@ const INDICATORS: IndicatorConfig[] = [
   },
 ];
 
+const OPENROUTER_MODELS = [
+  { id: 'openrouter/free', label: 'openrouter/free (Auto Free Router — Recommended)' },
+  { id: 'nvidia/nemotron-3.5-lightning:free', label: 'nvidia/nemotron-3.5-lightning:free' },
+  { id: 'google/gemma-4-26b-a4b-it:free', label: 'google/gemma-4-26b-a4b-it:free' },
+  { id: 'google/gemma-4-31b-it:free', label: 'google/gemma-4-31b-it:free' },
+];
+
 const AISettings: React.FC = () => {
   const [enabled, setEnabled] = useState<Record<string, boolean>>(
     Object.fromEntries(INDICATORS.map(i => [i.id, i.defaultEnabled]))
@@ -83,20 +95,130 @@ const AISettings: React.FC = () => {
     ]))
   );
   const [defaultInterval, setDefaultInterval] = useState('5min');
+  const [openrouterKey, setOpenrouterKey] = useState(() => getOpenRouterConfig().apiKey);
+  const [openrouterModel, setOpenrouterModel] = useState(() => getOpenRouterConfig().model);
+  const [showKey, setShowKey] = useState(false);
+  const [serverConfigured, setServerConfigured] = useState<boolean | null>(null);
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    getAiHealth()
+      .then((res) => setServerConfigured(Boolean(res?.ai?.configured)))
+      .catch(() => setServerConfigured(false));
+  }, []);
+
   const handleSave = () => {
-    // In a real implementation, POST settings to backend
+    saveOpenRouterConfig(openrouterKey, openrouterModel);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold text-white mb-1">AI Settings</h1>
       <p className="text-gray-400 text-sm mb-6">
-        Configure which indicators power the signal engine and their parameters.
+        OpenRouter is configured as the sole LLM provider for UP/DOWN prediction and candle analysis.
       </p>
+
+      {/* OpenRouter Sole LLM Config */}
+      <div className="bg-gray-900 border border-blue-800/60 rounded-xl p-5 mb-5">
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div>
+            <h2 className="text-white font-semibold flex items-center gap-2">
+              <span>🤖 OpenRouter AI (Sole LLM Provider)</span>
+            </h2>
+            <p className="text-gray-400 text-xs mt-0.5">
+              All other LLMs removed. Uses OpenRouter exclusively for UP (CALL) / DOWN (PUT) candle analysis.
+            </p>
+          </div>
+          <span
+            className={clsx(
+              'text-xs font-bold px-2.5 py-1 rounded-full border',
+              openrouterKey || serverConfigured
+                ? 'bg-emerald-950/70 text-emerald-300 border-emerald-700'
+                : 'bg-amber-950/70 text-amber-300 border-amber-700'
+            )}
+          >
+            {openrouterKey
+              ? 'Browser Key Active ✓'
+              : serverConfigured
+              ? 'Server ENV Active ✓'
+              : 'Key Required'}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-gray-400 text-xs mb-1 block">
+              OpenRouter API Key (<code className="text-blue-400">sk-or-v1-...</code>)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={openrouterKey}
+                onChange={(e) => setOpenrouterKey(e.target.value)}
+                placeholder="sk-or-v1-..."
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((s) => !s)}
+                className="px-3 py-2 bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg hover:bg-gray-700"
+              >
+                {showKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Stored locally in your browser &amp; sent securely via HTTPS header. On Render, you can also set <code className="text-blue-400">OPENROUTER_API_KEY</code> in Environment Variables.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-gray-400 text-xs mb-1 block">OpenRouter Model</label>
+            <select
+              value={OPENROUTER_MODELS.some((m) => m.id === openrouterModel) ? openrouterModel : 'custom'}
+              onChange={(e) => {
+                if (e.target.value !== 'custom') setOpenrouterModel(e.target.value);
+              }}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            >
+              {OPENROUTER_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+              <option value="custom">Custom OpenRouter Model ID</option>
+            </select>
+            <input
+              type="text"
+              value={openrouterModel}
+              onChange={(e) => setOpenrouterModel(e.target.value)}
+              placeholder="e.g. openrouter/free or nvidia/nemotron-3.5-lightning:free"
+              className="mt-2 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 font-mono"
+            />
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOpenrouterKey('');
+                saveOpenRouterConfig('', openrouterModel);
+              }}
+              className="text-xs text-red-400 hover:text-red-300"
+            >
+              Clear Saved Key
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+            >
+              {saved ? '✓ OpenRouter Activated' : 'Save & Activate OpenRouter'}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Default timeframe */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">

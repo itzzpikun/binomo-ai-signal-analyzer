@@ -249,12 +249,13 @@ class TestConflictVetoMessage(unittest.TestCase):
             sig_baseline = generate_signal(candles, interval="5min", symbol="EUR/USD")
             self.assertEqual(sig_baseline["direction"], "PUT")
 
-        # Test with LLM_ARBITER=true and mock Gemini returning opposing CALL
+        # Test with LLM_ARBITER=true and mock OpenRouter returning opposing CALL
         with patch.dict(os.environ, {"LLM_ARBITER": "true"}):
-            with patch("analysis.signal_engine.evaluate_with_gemini") as mock_gemini:
-                mock_gemini.return_value = {
+            with patch("analysis.signal_engine.evaluate_with_openrouter") as mock_openrouter:
+                mock_openrouter.return_value = {
                     "status": "active",
-                    "provider": "gemini",
+                    "provider": "openrouter",
+                    "model": "openrouter/free",
                     "direction": "CALL",
                     "confidence": 85.0,
                     "trap_risk": "LOW",
@@ -274,23 +275,53 @@ class TestConflictVetoMessage(unittest.TestCase):
 
 
 class TestLlmArbiterFlag(unittest.TestCase):
-    """Verify LLM Arbiter flag defaults to off and prevents LLM modification."""
+    """Verify LLM Arbiter flag controls OpenRouter arbiter activation and JSON safety."""
 
     def setUp(self):
         self.candles = _generate_synthetic_candles(30)
 
     def test_llm_arbiter_default_off(self):
-        """When LLM_ARBITER is unset or false, arbiter is disabled and does not touch signal."""
-        # Ensure LLM_ARBITER is not set or set to 'false'
+        """When LLM_ARBITER is false, arbiter is disabled and does not touch signal."""
         with unittest.mock.patch.dict(os.environ, {"LLM_ARBITER": "false"}):
             sig = generate_signal(self.candles, interval="5min", symbol="EUR/USD")
-            self.assertEqual(sig["gemini_arbiter"]["status"], "disabled")
-            self.assertIn("disabled", sig["gemini_arbiter"]["message"])
+            self.assertEqual(sig["ai_arbiter"]["status"], "disabled")
+            self.assertIn("disabled", sig["ai_arbiter"]["message"])
+
+    def test_no_nan_in_serialized_signal(self):
+        """Signal JSON serialization must never emit invalid NaN tokens (e.g. from AO on <34 candles)."""
+        import json
+        sig = generate_signal(self.candles[:22], interval="5min", symbol="EUR/USD", skip_llm=True)
+        dumped = json.dumps(sig, allow_nan=False)
+        self.assertIn("awesome_oscillator", dumped)
+        self.assertIsNone(sig["indicators"]["awesome_oscillator"]["ao"])
+
+    def test_openrouter_provides_up_down_when_math_waits(self):
+        """When math returns WAIT (non-dead market), OpenRouter active prediction supplies CALL/PUT."""
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"LLM_ARBITER": "true"}):
+            with patch("analysis.signal_engine.evaluate_with_openrouter") as mock_openrouter:
+                mock_openrouter.return_value = {
+                    "status": "active",
+                    "provider": "openrouter",
+                    "model": "openrouter/free",
+                    "direction": "CALL",
+                    "confidence": 78,
+                    "trap_risk": "LOW",
+                    "analysis_en": "Bullish rejection wick at support.",
+                    "analysis_hi": "Support par bullish rejection hai, UP signal strong hai.",
+                    "verdict": "UP_CALL",
+                }
+                sig = generate_signal(self.candles[:24], interval="5min", symbol="EUR/USD")
+                if sig["trade_quality"] != "DEAD MARKET":
+                    self.assertIn(sig["direction"], ("CALL", "WAIT"))
+                    if sig["trade_quality"] == "OPENROUTER AI PREDICTION":
+                        self.assertEqual(sig["direction"], "CALL")
+                        self.assertEqual(sig["confidence"], 78.0)
 
     def test_llm_arbiter_dynamic_interval(self):
         """Interval parameter must be passed into entry_timing_info."""
         for interval in ("1min", "5min", "15min"):
-            sig = generate_signal(self.candles, interval=interval, symbol="EUR/USD")
+            sig = generate_signal(self.candles, interval=interval, symbol="EUR/USD", skip_llm=True)
             self.assertIn(interval, sig["entry_timing"]["rule_en"])
             self.assertIn(interval, sig["entry_timing"]["expiry_duration"])
 

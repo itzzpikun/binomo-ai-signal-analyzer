@@ -31,7 +31,23 @@ from analysis.indicators import (
     calculate_macro_trend,
 )
 from analysis.patterns import detect_patterns
-from analysis.gemini_arbiter import evaluate_with_gemini
+from analysis.openrouter_arbiter import evaluate_with_openrouter
+
+
+def sanitize_for_json(value: Any) -> Any:
+    """Recursively convert NaN/Inf floats and numpy scalars to RFC 8259 valid JSON values."""
+    if isinstance(value, dict):
+        return {k: sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [sanitize_for_json(v) for v in value]
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        f = float(value)
+        return None if (math.isnan(f) or math.isinf(f)) else f
+    return value
 
 # ── Indicator Weights for High-Accuracy Binary Market Analysis ───────────────
 WEIGHTS = {
@@ -427,8 +443,9 @@ def generate_signal(
     candles: list[dict],
     interval: str = "5min",
     symbol: Optional[str] = None,
-    gemini_api_key: Optional[str] = None,
-    openai_api_key: Optional[str] = None,
+    openrouter_api_key: Optional[str] = None,
+    openrouter_model: Optional[str] = None,
+    skip_llm: bool = False,
 ) -> dict:
     """
     Main signal generation function with Binomo Strategy Guide Confluence Matrix.
@@ -693,8 +710,8 @@ def generate_signal(
     else:
         confidence = round(min(max(base_confidence, 60.0), 69.0), 1)
 
-    # ── Gemini AI Arbiter Cross-Verification ──────────────────────────────────
-    indicators_snapshot = {
+    # ── OpenRouter AI Analysis & UP/DOWN Prediction Layer ────────────────────
+    indicators_snapshot = sanitize_for_json({
         "rsi": {"value": round(rsi_val, 4) if not math.isnan(rsi_val) else None, "signal": rsi_sig},
         "ema": {"trend": ema_sig, "ema8": ema8, "ema21": ema21, "ema50": ema50},
         "adx": adx_dict,
@@ -704,7 +721,7 @@ def generate_signal(
         "divergence": divergence_dict,
         "exhaustion": exhaustion_dict,
         "macro_trend": macro_trend_dict,
-    }
+    })
 
     initial_math_signal = {
         "direction": direction,
@@ -713,52 +730,70 @@ def generate_signal(
         "reasons": {"bullish": all_bull_reasons[:3], "bearish": all_bear_reasons[:3]},
     }
 
-    llm_arbiter_enabled = os.getenv("LLM_ARBITER", "false").lower() in ("true", "1", "yes", "on")
+    llm_flag = os.getenv("LLM_ARBITER", "").strip().lower()
+    explicitly_disabled = llm_flag in ("false", "0", "no", "off")
+    has_key = bool((openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")).strip())
+    llm_arbiter_enabled = (not skip_llm) and (not explicitly_disabled) and (
+        llm_flag in ("true", "1", "yes", "on") or has_key
+    )
+
     if llm_arbiter_enabled:
-        gemini_result = evaluate_with_gemini(
+        ai_result = evaluate_with_openrouter(
             symbol=active_symbol,
             interval=interval,
             recent_candles=candles[-10:],
             indicators=indicators_snapshot,
             patterns=patterns,
             math_signal=initial_math_signal,
-            gemini_key=gemini_api_key,
-            openai_key=openai_api_key,
+            openrouter_key=openrouter_api_key,
+            model=openrouter_model,
         )
     else:
-        gemini_result = {
+        ai_result = {
             "status": "disabled",
-            "message": "LLM Arbiter disabled (LLM_ARBITER=off)",
+            "provider": "none",
+            "message": "LLM Arbiter disabled (LLM_ARBITER=off)" if explicitly_disabled else "OpenRouter scanner skip mode",
             "direction": "WAIT",
             "confidence": 0,
             "approved": True,
         }
 
-    if gemini_result.get("status") == "active":
-        gemini_dir = gemini_result.get("direction")
-        gemini_conf = gemini_result.get("confidence", confidence)
-        trap_risk = gemini_result.get("trap_risk", "LOW")
-        provider_name = (
-            "Gemini AI"
-            if gemini_result.get("provider") == "gemini"
-            else ("ChatGPT" if gemini_result.get("provider") == "openai" else "AI Arbiter")
-        )
+    if ai_result.get("status") in ("active", "cached"):
+        ai_dir = ai_result.get("direction", "WAIT")
+        ai_conf = float(ai_result.get("confidence", confidence) or confidence)
+        trap_risk = ai_result.get("trap_risk", "LOW")
+        model_label = ai_result.get("model", "OpenRouter")
+        provider_name = f"OpenRouter ({model_label})"
 
         if trap_risk == "HIGH" and direction != "WAIT":
             direction = "WAIT"
-            trade_quality = f"{provider_name.upper()} TRAP VETO"
-            all_bear_reasons.append(f"🤖 {provider_name} Trap Veto: {gemini_result.get('analysis_en')}")
-        elif direction != "WAIT" and gemini_dir != "WAIT" and gemini_dir != direction:
+            trade_quality = "OPENROUTER TRAP VETO"
+            all_bear_reasons.append(f"🤖 {provider_name} Trap Veto: {ai_result.get('analysis_en')}")
+        elif direction != "WAIT" and ai_dir in ("CALL", "PUT") and ai_dir != direction:
             original_direction = direction
             direction = "WAIT"
-            trade_quality = f"{provider_name.upper()} CONFLICT VETO"
+            trade_quality = "OPENROUTER CONFLICT VETO"
             all_bear_reasons.append(
-                f"🤖 {provider_name} Conflict Veto: Algorithmic signal was {original_direction} but AI detected opposing momentum ({gemini_dir})."
+                f"🤖 {provider_name} Conflict Veto: Algorithmic signal was {original_direction} but AI detected opposing momentum ({ai_dir})."
             )
-        elif direction != "WAIT" and gemini_dir == direction:
-            confidence = round((confidence * 0.5) + (gemini_conf * 0.5), 1)
-            trade_quality = f"AI CONFIRMED ({trade_quality})"
-            all_bull_reasons.append(f"🤖 {provider_name}: {gemini_result.get('analysis_en')}")
+        elif direction != "WAIT" and ai_dir == direction:
+            confidence = round((confidence * 0.4) + (ai_conf * 0.6), 1)
+            trade_quality = f"OPENROUTER CONFIRMED ({trade_quality})"
+            msg = f"🤖 {provider_name}: {ai_result.get('analysis_en')}"
+            if direction == "CALL":
+                all_bull_reasons.append(msg)
+            else:
+                all_bear_reasons.append(msg)
+        elif direction == "WAIT" and not is_dead_market and ai_dir in ("CALL", "PUT") and ai_conf >= 55 and trap_risk != "HIGH":
+            direction = ai_dir
+            confidence = round(ai_conf, 1)
+            trade_quality = "OPENROUTER AI PREDICTION"
+            quality_label = f"OpenRouter AI {ai_dir} Signal ({ai_conf:.0f}%)"
+            msg = f"🤖 {provider_name} Prediction ({ai_dir}): {ai_result.get('analysis_en')}"
+            if direction == "CALL":
+                all_bull_reasons.append(msg)
+            else:
+                all_bear_reasons.append(msg)
 
     # ── Exact Entry Timing & Horizon Information ──────────────────────────────
     entry_timing_info = {
@@ -771,7 +806,7 @@ def generate_signal(
         "quality_tier": trade_quality,
         "quality_label": quality_label,
         "matched_frameworks": matched_frameworks,
-        "gemini_summary": gemini_result.get("analysis_hi") if gemini_result.get("status") == "active" else None,
+        "ai_summary": ai_result.get("analysis_hi") if ai_result.get("status") in ("active", "cached") else None,
     }
 
     supports = sr.get("support_levels", [])
@@ -779,13 +814,13 @@ def generate_signal(
     nearest_support = max((s for s in supports if s <= close), default=None)
     nearest_resistance = min((r for r in resistances if r >= close), default=None)
 
-    return {
+    return sanitize_for_json({
         "direction": direction,
         "confidence": confidence,
         "trade_quality": trade_quality,
         "entry_timing": entry_timing_info,
         "confluence_score": round((confluence_count / 10.0) * 100.0, 1),
-        "gemini_arbiter": gemini_result,
+        "ai_arbiter": ai_result,
         "indicators": {
             "rsi": {
                 "value": round(rsi_val, 4) if not math.isnan(rsi_val) else None,
@@ -841,4 +876,4 @@ def generate_signal(
         "analysis_horizon": "5 minutes",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "disclaimer": "Signal based on technical analysis confluence only. Never risk capital without money management.",
-    }
+    })
