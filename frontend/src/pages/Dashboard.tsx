@@ -201,14 +201,18 @@ const Dashboard: React.FC = () => {
         setConnectionStatus('error');
       }
 
-      // 2. Also fetch latest tick price
+      // 2. Also fetch latest tick price (best-effort — never blocks UI on timeout)
       try {
-        const priceRes = await api.getCurrentPrice(selectedSymbol);
+        type PriceOrNull = { price: number } | null;
+        const priceRes: PriceOrNull = await Promise.race<PriceOrNull>([
+          api.getCurrentPrice(selectedSymbol),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+        ]);
         if (priceRes && typeof priceRes.price === 'number' && isMountedRef.current) {
           setCurrentPrice(priceRes.price);
         }
       } catch {
-        // Fallback to candle close already set
+        // Fallback to candle close already set — price ticker is non-critical
       }
     } catch {
       if (isMountedRef.current) {

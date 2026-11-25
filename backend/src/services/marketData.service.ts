@@ -636,7 +636,7 @@ export const marketDataService = {
     const cached = cacheService.get<number>(cacheKey);
     if (cached !== null) return cached;
 
-    // Check recent cached candles first (saves Twelve Data quota)
+    // Check recent cached candles first — fastest path, no external calls needed
     for (const tf of ['5min', '1min', '15min']) {
       const cachedY = cacheService.get<OHLCCandle[]>(`yahoo:candles:${sym}:${tf}`);
       if (cachedY && cachedY.length > 0) {
@@ -654,20 +654,26 @@ export const marketDataService = {
       }
     }
 
+    // Try Twelve Data and Yahoo Finance concurrently with a 5s timeout race
+    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+
     if (hasApiKey(activeKey) && Date.now() >= twelveDataCooldownUntil) {
       try {
-        const response = await axios.get(`${TWELVE_DATA_BASE}/price`, {
+        const response = await withTimeout(axios.get(`${TWELVE_DATA_BASE}/price`, {
           params: { symbol: sym, apikey: activeKey },
-          timeout: 6000,
-        });
+          timeout: 4500,
+        }), 5000);
 
-        const body = response.data as { price?: string; code?: number; message?: string };
-        if (body.code === 429) {
-          twelveDataCooldownUntil = Date.now() + 300_000;
-        } else if (body.price && !body.code) {
-          const price = formatPriceValue(parseFloat(body.price));
-          cacheService.set(cacheKey, price, 30);
-          return price;
+        if (response) {
+          const body = (response as any).data as { price?: string; code?: number; message?: string };
+          if (body.code === 429) {
+            twelveDataCooldownUntil = Date.now() + 300_000;
+          } else if (body.price && !body.code) {
+            const price = formatPriceValue(parseFloat(body.price));
+            cacheService.set(cacheKey, price, 30);
+            return price;
+          }
         }
       } catch (err) {
         if ((err as AxiosError)?.response?.status === 429) {
@@ -676,10 +682,18 @@ export const marketDataService = {
       }
     }
 
-    const yahooPrice = await fetchYahooPrice(sym);
+    const yahooPrice = await withTimeout(fetchYahooPrice(sym), 4000);
     if (yahooPrice !== null) {
-      cacheService.set(cacheKey, yahooPrice, 20);
-      return yahooPrice;
+      cacheService.set(cacheKey, yahooPrice as number, 20);
+      return yahooPrice as number;
+    }
+
+    // Final fallback: use latest Yahoo candles from cache (fetched during candle request)
+    for (const tf of ['5min', '1min', '15min']) {
+      const latestYahoo = cacheService.get<OHLCCandle[]>(`yahoo:candles:${sym}:${tf}`);
+      if (latestYahoo && latestYahoo.length > 0) {
+        return latestYahoo[latestYahoo.length - 1].close;
+      }
     }
 
     const simCandles = generateLiveBinomoCandles(sym, '1min', 2);
