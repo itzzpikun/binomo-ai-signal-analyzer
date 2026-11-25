@@ -88,12 +88,12 @@ async function bootstrap(): Promise<void> {
 
   // ── Determine Frontend Distribution Directory ───────────
   const candidatePaths = [
-    path.resolve(__dirname, '../public'),
-    path.resolve(__dirname, './public'),
     path.resolve(__dirname, '../../frontend/dist'),
-    path.resolve(process.cwd(), 'public'),
     path.resolve(process.cwd(), '../frontend/dist'),
     path.resolve(process.cwd(), 'frontend/dist'),
+    path.resolve(__dirname, '../public'),
+    path.resolve(__dirname, './public'),
+    path.resolve(process.cwd(), 'public'),
     path.resolve(process.cwd(), 'dist/public'),
   ];
   const frontendDist = candidatePaths.find((p) => fs.existsSync(path.join(p, 'index.html')));

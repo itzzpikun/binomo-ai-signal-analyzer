@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { useAppStore } from '../../store/appStore';
-import { getOpenRouterConfig, saveOpenRouterConfig } from '../../services/api';
+import {
+  getOpenRouterConfig,
+  saveOpenRouterConfig,
+  OPENROUTER_UPDATED_EVENT,
+} from '../../services/api';
 import type { Candle, Signal } from '../../types';
 
 interface BinomoCandlePredictorProps {
@@ -33,6 +37,8 @@ interface CandleAnalysis {
   confidence: number;
   entryTimingStatus: 'WAIT_FOR_CLOSE' | 'PREPARE_NOW' | 'ENTRY_ACTIVE';
   secondsRemaining: number;
+  usingLatestFormedCandle: boolean;
+  hasZeroRange: boolean;
 }
 
 export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
@@ -56,6 +62,14 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
   const [openrouterSaved, setOpenrouterSaved] = useState(false);
 
   useEffect(() => {
+    const syncKey = () => {
+      setOpenrouterKeyInput(getOpenRouterConfig().apiKey);
+    };
+    window.addEventListener(OPENROUTER_UPDATED_EVENT, syncKey);
+    return () => window.removeEventListener(OPENROUTER_UPDATED_EVENT, syncKey);
+  }, []);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       const now = Math.floor(Date.now() / 1000);
       setSecondsRemaining(intervalSeconds - (now % intervalSeconds));
@@ -67,50 +81,71 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
   const analysis: CandleAnalysis | null = useMemo(() => {
     if (!candles || candles.length < 5) return null;
 
-    const c0 = candles[candles.length - 1]; // Current forming candle
-    const c1 = candles[candles.length - 2]; // Previous completed candle
-    const c2 = candles[candles.length - 3]; // 2 candles ago
+    // Walk back past zero-range live tick stubs (O=H=L=C) to find the latest formed OHLC bar
+    let analyzedIdx = candles.length - 1;
+    const minIdx = Math.max(2, candles.length - 15);
+    while (
+      analyzedIdx > minIdx &&
+      Math.abs(candles[analyzedIdx].high - candles[analyzedIdx].low) <= 1e-8
+    ) {
+      analyzedIdx -= 1;
+    }
 
-    const range = Math.max(c0.high - c0.low, 0.00001);
+    const usingLatestFormedCandle = analyzedIdx < candles.length - 1;
+    const c0 = candles[analyzedIdx];
+    const c1 = candles[analyzedIdx - 1];
+    const c2 = candles[analyzedIdx - 2];
+
+    const rawRange = Math.max(c0.high - c0.low, 0);
+    const hasZeroRange = rawRange <= 1e-8;
     const body = Math.abs(c0.close - c0.open);
-    const upperWick = c0.high - Math.max(c0.open, c0.close);
-    const lowerWick = Math.min(c0.open, c0.close) - c0.low;
+    const upperWick = hasZeroRange ? 0 : Math.max(0, c0.high - Math.max(c0.open, c0.close));
+    const lowerWick = hasZeroRange ? 0 : Math.max(0, Math.min(c0.open, c0.close) - c0.low);
 
-    const bodyPercent = Math.round((body / range) * 100);
-    const upperWickPercent = Math.round((upperWick / range) * 100);
-    const lowerWickPercent = Math.round((lowerWick / range) * 100);
+    let upperWickPercent = 0;
+    let bodyPercent = 0;
+    let lowerWickPercent = 0;
+    if (!hasZeroRange) {
+      upperWickPercent = Math.round((upperWick / rawRange) * 100);
+      bodyPercent = Math.min(100 - upperWickPercent, Math.round((body / rawRange) * 100));
+      lowerWickPercent = Math.max(0, 100 - upperWickPercent - bodyPercent);
+    }
+    const range = Math.max(rawRange, 0.00001);
 
     const isBullish = c0.close > c0.open;
     const isBearish = c0.close < c0.open;
-    const isDoji = bodyPercent <= 12;
+    const isDoji = !hasZeroRange && bodyPercent <= 12;
 
     // Detect Japanese Candlestick Patterns for Binomo 1M/5M
-    let patternName = 'Normal Price Candle';
+    let patternName = hasZeroRange ? 'Flat Tick (0 Pip Spread)' : 'Balanced Candle Structure';
     let patternType: 'bullish' | 'bearish' | 'neutral' = 'neutral';
-    let rejectionReason = 'Normal trading range without dominant wick rejection.';
+    let rejectionReason = hasZeroRange
+      ? 'Recent candles have zero price movement (awaiting live liquidity).'
+      : `Candle range measured (${upperWickPercent}% upper wick, ${bodyPercent}% body, ${lowerWickPercent}% lower wick).`;
     let strategyName = 'Binomo Price Action Confluence';
     let predictedDirection: 'CALL' | 'PUT' | 'WAIT' = 'WAIT';
     // Use real model confidence from technical analysis engine if available
     const engineConfidence = signal ? Math.round(signal.confidence) : null;
+    const topBackendPattern = signal?.patterns?.[0];
 
     // Pattern 1: Bullish Pin Bar / Hammer (lower wick >= 55% of range)
-    if (lowerWickPercent >= 55 && upperWickPercent <= 20) {
-      patternName = 'Bullish Pin Bar / Hammer';
+    if (!hasZeroRange && lowerWickPercent >= 55 && upperWickPercent <= 20) {
+      patternName = bodyPercent <= 12 ? 'Dragonfly Doji / Bullish Pin Bar' : 'Bullish Pin Bar / Hammer';
       patternType = 'bullish';
       rejectionReason = `Lower wick rejection measured at ${lowerWickPercent}% of range. Buyer defense detected at support.`;
       strategyName = 'Binomo Pin Bar Reversal Strategy';
       predictedDirection = 'CALL';
     }
     // Pattern 2: Bearish Pin Bar / Shooting Star (upper wick >= 55% of range)
-    else if (upperWickPercent >= 55 && lowerWickPercent <= 20) {
-      patternName = 'Shooting Star / Bearish Pin Bar';
+    else if (!hasZeroRange && upperWickPercent >= 55 && lowerWickPercent <= 20) {
+      patternName = bodyPercent <= 12 ? 'Gravestone Doji / Shooting Star' : 'Shooting Star / Bearish Pin Bar';
       patternType = 'bearish';
       rejectionReason = `Upper wick rejection measured at ${upperWickPercent}% of range. Seller rejection detected at resistance.`;
       strategyName = 'Binomo Resistance Rejection Strategy';
       predictedDirection = 'PUT';
     }
     // Pattern 3: Bullish Engulfing
-    else if (isBullish && c1.close < c1.open && c0.close > c1.open && c0.open <= c1.close) {
+    else if (!hasZeroRange && isBullish && c1.close < c1.open && c0.close > c1.open && c0.open <= c1.close) {
       patternName = 'Bullish Engulfing Pattern';
       patternType = 'bullish';
       rejectionReason = 'Green candle body fully covers previous red candle body.';
@@ -118,7 +153,7 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
       predictedDirection = 'CALL';
     }
     // Pattern 4: Bearish Engulfing
-    else if (isBearish && c1.close > c1.open && c0.close < c1.open && c0.open >= c1.close) {
+    else if (!hasZeroRange && isBearish && c1.close > c1.open && c0.close < c1.open && c0.open >= c1.close) {
       patternName = 'Bearish Engulfing Pattern';
       patternType = 'bearish';
       rejectionReason = 'Red candle body fully covers previous green candle body.';
@@ -126,7 +161,7 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
       predictedDirection = 'PUT';
     }
     // Pattern 5: Strong Momentum Marubozu
-    else if (bodyPercent >= 80) {
+    else if (!hasZeroRange && bodyPercent >= 80) {
       if (isBullish) {
         patternName = 'Bullish Marubozu (Power Green)';
         patternType = 'bullish';
@@ -141,28 +176,42 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
         predictedDirection = 'PUT';
       }
     }
-    // Pattern 6: Inside Bar Breakout
-    else if (c0.high <= c1.high && c0.low >= c1.low) {
+    // Pattern 6: Inside Bar Breakout (strict non-zero range on both bars)
+    else if (
+      !hasZeroRange &&
+      Math.abs(c1.high - c1.low) > 1e-8 &&
+      c0.high <= c1.high &&
+      c0.low >= c1.low &&
+      (c0.high < c1.high || c0.low > c1.low)
+    ) {
       patternName = 'Inside Bar (Compression)';
       patternType = 'neutral';
-      rejectionReason = 'Price range compressed completely inside previous candle.';
+      rejectionReason = 'Price range compressed strictly inside previous candle.';
       strategyName = 'Binomo Volatility Squeeze';
       predictedDirection = 'WAIT';
     }
     // Pattern 7: Morning Star / Evening Star (3-candle sequence)
-    else if (c2.close < c2.open && Math.abs(c1.close - c1.open) < (c2.open - c2.low) * 0.3 && isBullish && c0.close > (c2.open + c2.close) / 2) {
+    else if (!hasZeroRange && c2.close < c2.open && Math.abs(c1.close - c1.open) < Math.max(c2.open - c2.low, 1e-8) * 0.3 && isBullish && c0.close > (c2.open + c2.close) / 2) {
       patternName = 'Morning Star (3-Candle Reversal)';
       patternType = 'bullish';
       rejectionReason = '3-candle reversal confirmed: drop, base star, upward candle close above midpoint.';
       strategyName = 'Binomo Morning Star Reversal';
       predictedDirection = 'CALL';
     }
-    else if (c2.close > c2.open && Math.abs(c1.close - c1.open) < (c2.high - c2.low) * 0.3 && isBearish && c0.close < (c2.open + c2.close) / 2) {
+    else if (!hasZeroRange && c2.close > c2.open && Math.abs(c1.close - c1.open) < Math.max(c2.high - c2.low, 1e-8) * 0.3 && isBearish && c0.close < (c2.open + c2.close) / 2) {
       patternName = 'Evening Star (3-Candle Reversal)';
       patternType = 'bearish';
       rejectionReason = '3-candle reversal confirmed: rally, top star, downward candle close below midpoint.';
       strategyName = 'Binomo Evening Star Reversal';
       predictedDirection = 'PUT';
+    }
+    // Pattern 7b: Multi-candle pattern confirmed by backend AI pattern detector
+    else if (topBackendPattern) {
+      patternName = topBackendPattern.name;
+      patternType = topBackendPattern.type;
+      rejectionReason = topBackendPattern.description;
+      strategyName = 'Binomo Multi-Candle Pattern';
+      predictedDirection = topBackendPattern.type === 'bullish' ? 'CALL' : topBackendPattern.type === 'bearish' ? 'PUT' : 'WAIT';
     }
     // Pattern 8: Incorporate OpenRouter AI / EMA Confluence from Signal if available
     else if (signal) {
@@ -183,9 +232,11 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
         strategyName = signal.ai_arbiter?.model ? `OpenRouter (${signal.ai_arbiter.model})` : 'Binomo Strategy #1 (EMA 8 / EMA 21 Cross)';
         predictedDirection = 'PUT';
       } else {
-        patternName = isDoji ? 'Doji (Indecision)' : 'Consolidation Range';
-        patternType = 'neutral';
-        rejectionReason = signal.ai_arbiter?.analysis_en || 'Market is consolidating without clear trend direction.';
+        patternName = isDoji ? 'Doji (Indecision)' : isBullish ? 'Bullish Consolidation Candle' : isBearish ? 'Bearish Consolidation Candle' : 'Consolidation Range';
+        patternType = isBullish ? 'bullish' : isBearish ? 'bearish' : 'neutral';
+        rejectionReason = (signal.ai_arbiter?.status === 'active' || signal.ai_arbiter?.status === 'cached')
+          ? (signal.ai_arbiter?.analysis_en || rejectionReason)
+          : `Upper Wick ${upperWickPercent}%, Body ${bodyPercent}%, Lower Wick ${lowerWickPercent}%. Market consolidating before next impulse.`;
         strategyName = 'OpenRouter + Quant Confluence';
         predictedDirection = 'WAIT';
       }
@@ -251,8 +302,10 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
       confidence,
       entryTimingStatus,
       secondsRemaining,
+      usingLatestFormedCandle,
+      hasZeroRange,
     };
-  }, [candles, signal, secondsRemaining, intervalSeconds]);
+  }, [candles, signal, secondsRemaining, intervalSeconds, isSimulated]);
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -429,14 +482,18 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
               )}>
                 {signal.ai_arbiter.direction === 'CALL' ? 'UP ▲' : signal.ai_arbiter.direction === 'PUT' ? 'DOWN ▼' : 'WAIT ⏸'} • {signal.ai_arbiter.confidence}%
               </span>
-            ) : (
+            ) : signal?.ai_arbiter?.status === 'disabled' ? (
               <button
                 type="button"
                 onClick={() => setShowKeyForm((v) => !v)}
                 className="text-[10px] font-bold text-amber-300 bg-amber-950/60 border border-amber-700/60 px-2 py-0.5 rounded hover:bg-amber-900/60"
               >
-                {signal?.ai_arbiter?.status === 'disabled' ? (showKeyForm ? 'Close' : '🔑 Add OpenRouter Key') : '⚡ Quant Active'}
+                {showKeyForm ? 'Close' : '🔑 Set OpenRouter Key'}
               </button>
+            ) : (
+              <span className="text-[10px] font-bold text-blue-300 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded">
+                ⚡ Quant + Candle Engine Active
+              </span>
             )}
           </div>
 
@@ -545,10 +602,17 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
 
       {/* ── Real-Time Candlestick Structure Breakdown ── */}
       <div className="bg-gray-950/80 border border-gray-800 rounded-xl p-3.5 flex flex-col gap-2.5">
-        <span className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
-          <span>🕯️</span>
-          <span>LIVE BINOMO CANDLE ANATOMY & PATTERN</span>
-        </span>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+            <span>🕯️</span>
+            <span>LIVE BINOMO CANDLE ANATOMY &amp; PATTERN</span>
+          </span>
+          {analysis.usingLatestFormedCandle && (
+            <span className="text-[10px] text-amber-300/90 bg-amber-950/60 border border-amber-800/50 px-2 py-0.5 rounded-full">
+              Latest Formed OHLC Bar
+            </span>
+          )}
+        </div>
 
         {/* Pattern & Strategy Badge */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -571,6 +635,14 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
           </div>
         </div>
 
+        {/* OHLC Strip */}
+        <div className="grid grid-cols-4 gap-1.5 text-[10px] font-mono bg-gray-900/50 border border-gray-800/70 rounded-lg px-2.5 py-1.5 text-gray-400">
+          <span>O: <b className="text-gray-200">{analysis.open.toFixed(5)}</b></span>
+          <span>H: <b className="text-emerald-300">{analysis.high.toFixed(5)}</b></span>
+          <span>L: <b className="text-red-300">{analysis.low.toFixed(5)}</b></span>
+          <span>C: <b className={analysis.isBullish ? 'text-emerald-400' : analysis.isBearish ? 'text-red-400' : 'text-gray-200'}>{analysis.close.toFixed(5)}</b></span>
+        </div>
+
         {/* Candle Anatomy Gauges (Wick / Body ratio) */}
         <div className="bg-gray-900/60 p-2.5 rounded-lg border border-gray-800/80 flex flex-col gap-2">
           <div className="flex items-center justify-between text-[11px] font-mono text-gray-300">
@@ -585,6 +657,26 @@ export const BinomoCandlePredictor: React.FC<BinomoCandlePredictorProps> = ({
             <div style={{ width: `${analysis.bodyPercent}%` }} className={analysis.isBullish ? 'bg-emerald-500' : 'bg-red-600'} title="Candle Body" />
             <div style={{ width: `${analysis.lowerWickPercent}%` }} className="bg-emerald-400/80" title="Lower Wick (Buying rejection)" />
           </div>
+
+          {signal?.patterns && signal.patterns.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {signal.patterns.slice(0, 3).map((pat) => (
+                <span
+                  key={pat.name}
+                  className={clsx(
+                    'text-[10px] font-semibold px-2 py-0.5 rounded-full border',
+                    pat.type === 'bullish'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                      : pat.type === 'bearish'
+                      ? 'bg-red-500/15 text-red-300 border-red-500/40'
+                      : 'bg-gray-800 text-gray-300 border-gray-700'
+                  )}
+                >
+                  {pat.type === 'bullish' ? '▲' : pat.type === 'bearish' ? '▼' : '•'} {pat.name}
+                </span>
+              ))}
+            </div>
+          )}
 
           <p className="text-[11px] text-gray-400 italic mt-0.5">
             🔎 <b>Candle Read:</b> {analysis.rejectionReason}

@@ -49,7 +49,13 @@ def detect_patterns(candles: list[dict]) -> list[dict]:
         return []
 
     patterns = []
-    c = candles  # alias
+    # Skip trailing flat single-tick forming bars (e.g. Yahoo live tick O=H=L=C)
+    # when earlier formed bars have real OHLC spread so genuine patterns aren't hidden.
+    effective = list(candles)
+    while len(effective) > 3 and _range(effective[-1]) <= 1e-9:
+        effective.pop()
+
+    c = effective  # alias
 
     def add(name: str, ptype: str, strength: float, description: str):
         patterns.append(
@@ -246,8 +252,14 @@ def detect_patterns(candles: list[dict]) -> list[dict]:
     ):
         add("Bearish Harami", "bearish", 0.5, "Small bearish candle inside prior large bullish candle; buying momentum slowing.")
 
-    # Inside Bar (Volatility squeeze)
-    if last["high"] <= prev["high"] and last["low"] >= prev["low"]:
+    # Inside Bar (Volatility squeeze — require non-zero ranges on both candles)
+    if (
+        rng_last > 1e-9
+        and rng_prev > 1e-9
+        and last["high"] <= prev["high"]
+        and last["low"] >= prev["low"]
+        and (last["high"] < prev["high"] or last["low"] > prev["low"])
+    ):
         add("Inside Bar", "neutral", 0.45, "Inside bar compression; breakout expected outside mother candle range.")
 
     # Bullish Kicker (Sudden momentum jump)

@@ -1,48 +1,22 @@
 services:
-  # 1. AI Signal Engine (Python Flask)
   - type: web
-    name: binomo-ai-engine
-    env: python
-    buildCommand: "cd ai-engine && pip install -r requirements.txt"
-    startCommand: "cd ai-engine && python app.py"
+    name: binomo-ai-pro-analyzer
+    runtime: docker
     plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: PORT
-        value: 8000
-
-  # 2. Backend Express API
-  - type: web
-    name: binomo-backend
-    env: node
-    buildCommand: "cd backend && npm install && npm run build"
-    startCommand: "cd backend && npm start"
-    plan: free
-    envVars:
-      - key: PORT
-        value: 5001
+        value: "5001"
+      - key: AI_ENGINE_URL
+        value: http://127.0.0.1:8000
       - key: TWELVE_DATA_API_KEY
         value: 68d13d3465434ad8a40d7db1eda9b8a8
-        sync: false
       - key: LLM_ARBITER
         value: "true"
-      - key: OPENROUTER_API_KEY
-        sync: false
       - key: OPENROUTER_MODEL
         value: openrouter/free
-      - key: AI_ENGINE_URL
-        fromService:
-          type: web
-          name: binomo-ai-engine
-          property: host
-
-  # 3. Frontend React App
-  - type: web
-    name: binomo-frontend
-    env: static
-    buildCommand: "cd frontend && npm install && npm run build"
-    staticPublishPath: "./frontend/dist"
-    plan: free
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+      - key: OPENROUTER_API_KEY
+        sync: false

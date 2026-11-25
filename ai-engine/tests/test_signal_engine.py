@@ -325,6 +325,19 @@ class TestLlmArbiterFlag(unittest.TestCase):
             self.assertIn(interval, sig["entry_timing"]["rule_en"])
             self.assertIn(interval, sig["entry_timing"]["expiry_duration"])
 
+    def test_zero_range_trailing_tick_does_not_trigger_inside_bar(self):
+        """Flat single-tick live bars (O=H=L=C) must not trigger false Inside Bar or hide patterns."""
+        from analysis.patterns import detect_patterns
+        candles = _generate_synthetic_candles(10)
+        # Replace last formed candle with a clean Bullish Marubozu followed by flat tick stubs
+        candles[-3] = {"timestamp": 1000, "open": 1.1000, "high": 1.1020, "low": 1.0990, "close": 1.0992}
+        candles[-2] = {"timestamp": 1300, "open": 1.0992, "high": 1.1025, "low": 1.0992, "close": 1.1025}
+        candles[-1] = {"timestamp": 1600, "open": 1.1025, "high": 1.1025, "low": 1.1025, "close": 1.1025}
+        pats = detect_patterns(candles)
+        pat_names = [p["name"] for p in pats]
+        self.assertNotIn("Inside Bar", pat_names)
+        self.assertIn("Bullish Marubozu", pat_names)
+
 
 if __name__ == "__main__":
     unittest.main()

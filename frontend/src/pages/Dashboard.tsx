@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { SignalAlert } from '../store/appStore';
-import { api } from '../services/api';
+import { api, OPENROUTER_UPDATED_EVENT } from '../services/api';
 import { soundService } from '../services/soundService';
 import { notificationService } from '../services/notificationService';
 import { SignalAlertToast, SoundAlertControls } from '../components/common/SignalAlertToast';
@@ -239,9 +239,15 @@ const Dashboard: React.FC = () => {
       fetchMarketDataAndAnalyze();
     }, 5_000);
 
+    const onOpenRouterUpdated = () => {
+      fetchMarketDataAndAnalyze();
+    };
+    window.addEventListener(OPENROUTER_UPDATED_EVENT, onOpenRouterUpdated);
+
     return () => {
       isMountedRef.current = false;
       clearInterval(intervalId);
+      window.removeEventListener(OPENROUTER_UPDATED_EVENT, onOpenRouterUpdated);
     };
   }, [fetchMarketDataAndAnalyze]);
 

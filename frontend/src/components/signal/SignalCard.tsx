@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 import type { Signal } from '../../types';
-import { getOpenRouterConfig, saveOpenRouterConfig } from '../../services/api';
+import { getOpenRouterConfig, saveOpenRouterConfig, OPENROUTER_UPDATED_EVENT } from '../../services/api';
 import ConfidenceBar from './ConfidenceBar';
 
 interface SignalCardProps {
@@ -21,6 +21,12 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, isAnalyzing }) => {
   const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
   const [orKeyInput, setOrKeyInput] = useState<string>(() => getOpenRouterConfig().apiKey);
   const [keySavedToast, setKeySavedToast] = useState<boolean>(false);
+
+  useEffect(() => {
+    const syncKey = () => setOrKeyInput(getOpenRouterConfig().apiKey);
+    window.addEventListener(OPENROUTER_UPDATED_EVENT, syncKey);
+    return () => window.removeEventListener(OPENROUTER_UPDATED_EVENT, syncKey);
+  }, []);
 
   useEffect(() => {
     const updateCountdown = () => {

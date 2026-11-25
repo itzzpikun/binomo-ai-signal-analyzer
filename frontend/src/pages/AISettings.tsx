@@ -79,9 +79,12 @@ const INDICATORS: IndicatorConfig[] = [
 
 const OPENROUTER_MODELS = [
   { id: 'openrouter/free', label: 'openrouter/free (Auto Free Router — Recommended)' },
-  { id: 'nvidia/nemotron-3.5-lightning:free', label: 'nvidia/nemotron-3.5-lightning:free' },
   { id: 'google/gemma-4-26b-a4b-it:free', label: 'google/gemma-4-26b-a4b-it:free' },
   { id: 'google/gemma-4-31b-it:free', label: 'google/gemma-4-31b-it:free' },
+  { id: 'nvidia/nemotron-3.5-lightning:free', label: 'nvidia/nemotron-3.5-lightning:free' },
+  { id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', label: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
+  { id: 'inclusionai/ling-3.2-flash:free', label: 'inclusionai/ling-3.2-flash:free' },
+  { id: 'baidu/ernie-5.5-flash-preview:free', label: 'baidu/ernie-5.5-flash-preview:free' },
 ];
 
 const AISettings: React.FC = () => {

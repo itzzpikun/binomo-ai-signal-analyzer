@@ -20,8 +20,8 @@ RUN python3 -m venv /app/ai-engine/venv && \
 # Install frontend dependencies and build production static files
 RUN cd /app/frontend && npm install && npm run build
 
-# Install backend dependencies and build TypeScript server
-RUN cd /app/backend && npm install && npm run build
+# Install backend dependencies, sync fresh frontend build, and build TypeScript server
+RUN cd /app/backend && npm install && rm -rf public dist/public && cp -r /app/frontend/dist public && npm run build
 
 # Set environment variables
 ENV NODE_ENV=production

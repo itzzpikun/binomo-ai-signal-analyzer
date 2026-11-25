@@ -65,14 +65,23 @@ export interface OpenRouterArbiterResult {
   error?: string;
 }
 
+export interface DetectedPattern {
+  name: string;
+  type: 'bullish' | 'bearish' | 'neutral';
+  strength: number;
+  description: string;
+}
+
 export interface Signal {
   id?: string;
+  _id?: string;
   symbol: string;
   interval: TimeInterval;
   timestamp: string; // ISO string
   direction: SignalDirection;
   confidence: number; // 0–100
   indicators: any;
+  patterns?: DetectedPattern[];
   reasons: SignalReasons;
   outcome?: OutcomeType | null;
   verifiedAt?: string | null;

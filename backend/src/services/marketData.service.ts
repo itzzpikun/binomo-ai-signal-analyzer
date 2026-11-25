@@ -408,7 +408,9 @@ async function fetchYahooForexCandles(
       const quote = result?.indicators?.quote?.[0];
       if (!timestamps.length || !quote) continue;
 
-      const candles: OHLCCandle[] = [];
+      const intervalSec = interval === '1min' ? 60 : interval === '15min' ? 900 : 300;
+      const bucketMap = new Map<number, OHLCCandle>();
+
       for (let i = 0; i < timestamps.length; i++) {
         const o = quote.open?.[i];
         const h = quote.high?.[i];
@@ -422,16 +424,35 @@ async function fetchYahooForexCandles(
         ) {
           continue;
         }
-        candles.push({
-          timestamp: new Date(timestamps[i] * 1000).toISOString(),
-          open: formatPriceValue(o),
-          high: formatPriceValue(Math.max(h, o, c)),
-          low: formatPriceValue(Math.min(l, o, c)),
-          close: formatPriceValue(c),
-          volume: typeof quote.volume?.[i] === 'number' && Number.isFinite(quote.volume[i]) ? quote.volume[i] : 0,
-          source: 'real',
-        });
+        const bucketTs = Math.floor(timestamps[i] / intervalSec) * intervalSec;
+        const formattedO = formatPriceValue(o);
+        const formattedH = formatPriceValue(Math.max(h, o, c));
+        const formattedL = formatPriceValue(Math.min(l, o, c));
+        const formattedC = formatPriceValue(c);
+        const vol = typeof quote.volume?.[i] === 'number' && Number.isFinite(quote.volume[i]) ? quote.volume[i] : 0;
+
+        const existing = bucketMap.get(bucketTs);
+        if (existing) {
+          existing.high = formatPriceValue(Math.max(existing.high, formattedH));
+          existing.low = formatPriceValue(Math.min(existing.low, formattedL));
+          existing.close = formattedC;
+          existing.volume += vol;
+        } else {
+          bucketMap.set(bucketTs, {
+            timestamp: new Date(bucketTs * 1000).toISOString(),
+            open: formattedO,
+            high: formattedH,
+            low: formattedL,
+            close: formattedC,
+            volume: vol,
+            source: 'real',
+          });
+        }
       }
+
+      const candles = Array.from(bucketMap.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([, candle]) => candle);
 
       if (candles.length >= 15) {
         return candles.slice(-outputsize);

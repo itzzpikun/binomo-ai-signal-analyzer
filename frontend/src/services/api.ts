@@ -153,6 +153,8 @@ export const getOpenRouterConfig = (): OpenRouterClientConfig => {
   };
 };
 
+export const OPENROUTER_UPDATED_EVENT = 'binomo:openrouter-updated';
+
 export const saveOpenRouterConfig = (apiKey: string, model: string): void => {
   if (typeof window === 'undefined') return;
   const trimmedKey = apiKey.trim();
@@ -163,6 +165,7 @@ export const saveOpenRouterConfig = (apiKey: string, model: string): void => {
     localStorage.removeItem(OPENROUTER_KEY_STORAGE);
   }
   localStorage.setItem(OPENROUTER_MODEL_STORAGE, trimmedModel);
+  window.dispatchEvent(new CustomEvent(OPENROUTER_UPDATED_EVENT));
 };
 
 export const getAiHealth = async (): Promise<{
@@ -218,6 +221,7 @@ export const analyzeSignal = async (params: AnalyzeSignalParams): Promise<Signal
     trade_quality: sig.trade_quality,
     entry_timing: sig.entry_timing,
     confluence_score: sig.confluence_score,
+    patterns: Array.isArray(sig.patterns) ? sig.patterns : [],
     ai_arbiter: sig.ai_arbiter,
     source: data.source || sig.source,
   };

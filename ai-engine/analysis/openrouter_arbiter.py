@@ -21,9 +21,13 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Default fallback order for OpenRouter free/configured models
 DEFAULT_OPENROUTER_MODELS = [
     "openrouter/free",
-    "nvidia/nemotron-3.5-lightning:free",
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "inclusionai/ling-3.2-flash:free",
+    "baidu/ernie-5.5-flash-preview:free",
+    "liquid/lfm-3-1.7b:free",
 ]
 
 # Memory cache: cache_key -> {"ts": float, "result": dict}
